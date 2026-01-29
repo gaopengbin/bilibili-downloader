@@ -56,24 +56,60 @@ jobs:
           Copy-Item "$($aria2Dir.FullName)/aria2c.exe" "src-tauri/aria2c.exe"
           Remove-Item -Recurse -Force "aria2-temp", "aria2.zip"
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri app
+        run: npm run tauri build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      - name: Get version
+        id: version
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
         with:
-          tauriScript: npm run tauri
-          tagName: v__VERSION__
-          releaseName: 'B站视频下载器 v__VERSION__'
-          releaseBody: |
+          name: 'B站视频下载器 v${{ steps.version.outputs.VERSION }}'
+          body: |
             ## 更新内容
             
             请查看 [更新日志](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详情。
             
             ## 下载
             
-            - Windows: 下载 `.msi` 或 `.exe` 安装包
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+            - Windows 安装包: `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64-setup.exe`
+            - Windows MSI: `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_en-US.msi`
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi.sig
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate latest.json for updater
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $msiSig = Get-Content "src-tauri/target/release/bundle/msi/bilibili-downloader_${version}_x64_en-US.msi.sig" -Raw
+          $nsisSig = Get-Content "src-tauri/target/release/bundle/nsis/bilibili-downloader_${version}_x64-setup.exe.sig" -Raw
+          $latest = @{
+            version = "v$version"
+            notes = "请查看更新日志了解详情"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $nsisSig.Trim()
+                url = "https://github.com/${{ github.repository }}/releases/download/v$version/bilibili-downloader_${version}_x64-setup.exe"
+              }
+            }
+          }
+          $latest | ConvertTo-Json -Depth 10 | Set-Content "latest.json"
+        
+      - name: Upload latest.json
+        uses: softprops/action-gh-release@v1
+        with:
+          files: latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
