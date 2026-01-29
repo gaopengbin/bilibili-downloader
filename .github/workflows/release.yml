@@ -63,6 +63,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
+          tauriScript: npm run tauri
           tagName: v__VERSION__
           releaseName: 'B站视频下载器 v__VERSION__'
           releaseBody: |
