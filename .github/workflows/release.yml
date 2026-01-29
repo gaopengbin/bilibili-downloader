@@ -36,6 +36,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Download yt-dlp
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "src-tauri/yt-dlp.exe"
+
+      - name: Download ffmpeg
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-temp"
+          $ffmpegDir = Get-ChildItem -Path "ffmpeg-temp" -Directory | Select-Object -First 1
+          Copy-Item "$($ffmpegDir.FullName)/bin/ffmpeg.exe" "src-tauri/ffmpeg.exe"
+          Remove-Item -Recurse -Force "ffmpeg-temp", "ffmpeg.zip"
+
+      - name: Download aria2c
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip" -OutFile "aria2.zip"
+          Expand-Archive -Path "aria2.zip" -DestinationPath "aria2-temp"
+          $aria2Dir = Get-ChildItem -Path "aria2-temp" -Directory | Select-Object -First 1
+          Copy-Item "$($aria2Dir.FullName)/aria2c.exe" "src-tauri/aria2c.exe"
+          Remove-Item -Recurse -Force "aria2-temp", "aria2.zip"
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
