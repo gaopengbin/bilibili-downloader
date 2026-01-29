@@ -13,7 +13,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3MzcwMjJDQkExMzY3RkEKUldUNlp4TzZMQUkzTnlGNU1XYyt6ZDVWMVlUd3hkK2F0c2tEUWlLbXRpN0hBRmtmMDQrcjhpbmEK",
       "endpoints": [
-        "https://github.com/YOUR_GITHUB_USERNAME/bilibili-downloader/releases/latest/download/latest.json"
+        "https://github.com/gaopengbin/bilibili-downloader/releases/latest/download/latest.json"
       ]
     }
   },
