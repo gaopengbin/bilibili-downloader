@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "bilibili-downloader",
+  "version": "0.1.0",
+  "identifier": "com.administrator.bilibili-downloader",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3MzcwMjJDQkExMzY3RkEKUldUNlp4TzZMQUkzTnlGNU1XYyt6ZDVWMVlUd3hkK2F0c2tEUWlLbXRpN0hBRmtmMDQrcjhpbmEK",
+      "endpoints": [
+        "https://github.com/YOUR_GITHUB_USERNAME/bilibili-downloader/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "app": {
+"windows": [
+      {
+        "label": "main",
+        "title": "B站视频下载器",
+        "width": 1000,
+        "height": 760,
+        "minWidth": 800,
+        "minHeight": 600,
+        "visible": false
+      },
+      {
+        "label": "splashscreen",
+        "title": "加载中...",
+        "url": "splashscreen.html",
+        "width": 400,
+        "height": 300,
+        "center": true,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "backgroundColor": [251, 114, 153, 255]
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": false
+  },
+"bundle": {
+    "active": true,
+"targets": [],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "yt-dlp.exe",
+      "ffmpeg.exe"
+    ]
+  }
+}

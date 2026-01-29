@@ -1,0 +1,5 @@
+;!@Install@!UTF-8!
+Title="B站视频下载器"
+BeginPrompt="B站视频下载器 v1.0\n\n解压后运行 bilibili-downloader.exe\n\n点击确定开始解压"
+RunProgram="bilibili-downloader.exe"
+;!@InstallEnd@!
