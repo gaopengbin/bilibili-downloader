@@ -68,6 +68,11 @@ jobs:
           $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Create portable zip
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          Compress-Archive -Path "src-tauri/target/release/bilibili-downloader.exe" -DestinationPath "bilibili-downloader_${version}_x64_portable.zip"
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -79,9 +84,13 @@ jobs:
             
             ## 下载
             
-            - Windows 安装包: `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64-setup.exe`
-            - Windows MSI: `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_en-US.msi`
+            | 版本 | 文件 | 说明 |
+            |------|------|------|
+            | 🚀 便携版 | `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_portable.zip` | 解压即用，无需安装 |
+            | 📦 安装版 | `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64-setup.exe` | 支持应用内自动更新 |
+            | 📦 MSI | `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_en-US.msi` | 支持应用内自动更新 |
           files: |
+            bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_portable.zip
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/msi/*.msi.sig
             src-tauri/target/release/bundle/nsis/*.exe
