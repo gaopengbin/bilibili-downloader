@@ -4,8 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from '@tauri-apps/plugin-dialog';
-import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
+// import { check } from '@tauri-apps/plugin-updater';
+// import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { 
   Search, Download, FolderOpened, VideoPlay, VideoPause, Clock, Star,
@@ -251,11 +251,12 @@ const isDarkMode = ref(false);
 const showSettings = ref(false);
 
 // 更新相关
-const isCheckingUpdate = ref(false);
-const updateInfo = ref<{ version: string; body?: string } | null>(null);
-const isDownloadingUpdate = ref(false);
-const updateProgress = ref(0);
-const currentVersion = '0.1.0'; // 当前版本号
+// 更新功能暂未启用
+// const isCheckingUpdate = ref(false);
+// const updateInfo = ref<{ version: string; body?: string } | null>(null);
+// const isDownloadingUpdate = ref(false);
+// const updateProgress = ref(0);
+// const currentVersion = '0.1.0';
 
 // 用户设置
 interface UserSettings {
@@ -380,93 +381,6 @@ function saveSettings() {
     localStorage.setItem('userSettings', JSON.stringify(settings.value));
   } catch (error) {
     console.error('保存设置失败:', error);
-  }
-}
-
-// 检查更新
-async function checkForUpdate() {
-  if (isCheckingUpdate.value) return;
-  
-  isCheckingUpdate.value = true;
-  updateInfo.value = null;
-  
-  try {
-    const update = await check();
-    
-    if (update) {
-      updateInfo.value = {
-        version: update.version,
-        body: update.body || undefined,
-      };
-      
-      // 询问用户是否更新
-      const result = await ElMessageBox.confirm(
-        `发现新版本 v${update.version}\n\n${update.body || '修复已知问题，提升稳定性'}\n\n是否立即更新？`,
-        '发现新版本',
-        {
-          confirmButtonText: '立即更新',
-          cancelButtonText: '稍后提醒',
-          type: 'info',
-        }
-      ).catch(() => 'cancel');
-      
-      if (result === 'confirm') {
-        await downloadAndInstallUpdate(update);
-      }
-    } else {
-      ElMessage.success('当前已是最新版本');
-    }
-  } catch (error) {
-    console.error('检查更新失败:', error);
-    ElMessage.warning('检查更新失败，请稍后再试');
-  } finally {
-    isCheckingUpdate.value = false;
-  }
-}
-
-// 下载并安装更新
-async function downloadAndInstallUpdate(update: any) {
-  isDownloadingUpdate.value = true;
-  updateProgress.value = 0;
-  
-  try {
-    // 显示下载进度
-    ElMessage.info('正在下载更新...');
-    
-    let downloaded = 0;
-    let contentLength = 0;
-    
-    await update.downloadAndInstall((event: any) => {
-      switch (event.event) {
-        case 'Started':
-          contentLength = event.data.contentLength || 0;
-          console.log(`开始下载更新，文件大小: ${contentLength}`);
-          break;
-        case 'Progress':
-          downloaded += event.data.chunkLength;
-          if (contentLength > 0) {
-            updateProgress.value = Math.round((downloaded / contentLength) * 100);
-          }
-          break;
-        case 'Finished':
-          console.log('更新下载完成');
-          break;
-      }
-    });
-    
-    ElMessage.success('更新下载完成，即将重启应用...');
-    
-    // 延迟重启让用户看到提示
-    setTimeout(async () => {
-      await relaunch();
-    }, 1500);
-    
-  } catch (error) {
-    console.error('下载更新失败:', error);
-    ElMessage.error('下载更新失败，请稍后重试');
-  } finally {
-    isDownloadingUpdate.value = false;
-    updateProgress.value = 0;
   }
 }
 
