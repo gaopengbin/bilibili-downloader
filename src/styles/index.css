@@ -3,6 +3,4 @@
  * 按顺序导入所有全局样式
  */
 
-@import './variables.css';
-@import './reset.css';
-@import './element-plus.css';
+@import './global.css';
