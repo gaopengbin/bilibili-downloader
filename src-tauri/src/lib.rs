@@ -2460,6 +2460,76 @@ fn delete_folder(path: String) -> Result<ApiResponse<()>, String> {
     }
 }
 
+// ==================== 下载并安装更新 ====================
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: tauri::AppHandle,
+    url: String,
+    version: String,
+) -> Result<(), String> {
+    // 获取临时目录
+    let temp_dir = std::env::temp_dir();
+    let setup_filename = format!("bilibili-downloader_{}_setup.exe", version);
+    let setup_path = temp_dir.join(&setup_filename);
+    
+    // 下载文件
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header("User-Agent", "bilibili-downloader")
+        .send()
+        .await
+        .map_err(|e| format!("下载失败: {}", e))?;
+    
+    let total_size = response.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+    
+    // 创建文件
+    let mut file = fs::File::create(&setup_path)
+        .map_err(|e| format!("创建文件失败: {}", e))?;
+    
+    // 流式下载并报告进度
+    let mut stream = response.bytes_stream();
+    use futures_util::StreamExt;
+    
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("下载失败: {}", e))?;
+        file.write_all(&chunk).map_err(|e| format!("写入失败: {}", e))?;
+        
+        downloaded += chunk.len() as u64;
+        
+        // 计算进度并发送事件
+        if total_size > 0 {
+            let progress = ((downloaded as f64 / total_size as f64) * 100.0) as u32;
+            let _ = app.emit("update-download-progress", progress);
+        }
+    }
+    
+    // 确保写入完成
+    drop(file);
+    
+    // 发送完成进度
+    let _ = app.emit("update-download-progress", 100u32);
+    
+    // 等待一小段时间让用户看到100%
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    
+    // 启动安装程序
+    #[cfg(target_os = "windows")]
+    {
+        Command::new(&setup_path)
+            .creation_flags(0x00000008) // DETACHED_PROCESS
+            .spawn()
+            .map_err(|e| format!("启动安装程序失败: {}", e))?;
+    }
+    
+    // 退出当前应用
+    app.exit(0);
+    
+    Ok(())
+}
+
 // ==================== 应用入口 ====================
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2474,7 +2544,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             init_resources,
             close_splashscreen,
@@ -2496,7 +2565,8 @@ pub fn run() {
             load_download_tasks,
             cleanup_temp_dir,
             open_folder,
-            delete_folder
+            delete_folder,
+            download_and_install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

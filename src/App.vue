@@ -252,7 +252,9 @@ const showSettings = ref(false);
 
 // 更新相关
 const isCheckingUpdate = ref(false);
-const updateInfo = ref<{ version: string; body?: string; url: string } | null>(null);
+const isDownloadingUpdate = ref(false);
+const updateDownloadProgress = ref(0);
+const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
 const currentVersion = '0.3.0';
 
@@ -270,10 +272,15 @@ const checkForUpdate = async (silent = false) => {
     
     // 比较版本号
     if (compareVersions(latestVersion, currentVersion) > 0) {
+      // 查找安装包下载链接 (优先 setup.exe)
+      const assets = data.assets || [];
+      const setupAsset = assets.find((a: { name: string }) => a.name.endsWith('_setup.exe') || a.name.endsWith('-setup.exe'));
+      
       updateInfo.value = {
         version: latestVersion,
         body: data.body,
-        url: data.html_url
+        url: data.html_url,
+        downloadUrl: setupAsset?.browser_download_url
       };
       showUpdateDialog.value = true;
     } else if (!silent) {
@@ -309,6 +316,33 @@ const openReleasePage = () => {
     window.open(updateInfo.value.url, '_blank');
   }
   showUpdateDialog.value = false;
+};
+
+// 下载并安装更新
+const downloadAndInstallUpdate = async () => {
+  if (!updateInfo.value?.downloadUrl) {
+    // 没有直接下载链接，打开网页
+    openReleasePage();
+    return;
+  }
+  
+  isDownloadingUpdate.value = true;
+  updateDownloadProgress.value = 0;
+  
+  try {
+    // 调用后端下载并安装
+    await invoke('download_and_install_update', {
+      url: updateInfo.value.downloadUrl,
+      version: updateInfo.value.version
+    });
+    
+    // 下载完成，后端会自动启动安装程序并退出应用
+  } catch (error: unknown) {
+    console.error('下载更新失败:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    ElMessage.error(`下载更新失败: ${errorMsg}`);
+    isDownloadingUpdate.value = false;
+  }
 };
 
 // 用户设置
@@ -535,6 +569,12 @@ onMounted(async () => {
   await listen<number>('download-progress', (event) => {
     downloadProgress.value = event.payload;
   });
+  
+  // 监听更新下载进度
+  await listen<number>('update-download-progress', (event) => {
+    updateDownloadProgress.value = event.payload;
+  });
+  
   // 监听详细进度（支持多任务）
   await listen<ProgressDetail>('download-progress-detail', (event) => {
     const { task_id, percent, stage, speed, downloaded, total_size } = event.payload;
@@ -3607,6 +3647,8 @@ async function loadMoreFavorites() {
       title="发现新版本"
       width="420px"
       :close-on-click-modal="false"
+      :close-on-press-escape="!isDownloadingUpdate"
+      :show-close="!isDownloadingUpdate"
     >
       <div class="update-dialog-content">
         <div class="update-version">
@@ -3618,10 +3660,22 @@ async function loadMoreFavorites() {
           <div class="update-notes-title">更新内容：</div>
           <div class="update-notes-content">{{ updateInfo.body }}</div>
         </div>
+        <div v-if="isDownloadingUpdate" class="update-progress">
+          <div class="update-progress-text">正在下载更新...</div>
+          <el-progress :percentage="updateDownloadProgress" :stroke-width="10" />
+          <div class="update-progress-hint">下载完成后将自动启动安装程序</div>
+        </div>
       </div>
       <template #footer>
-        <el-button @click="showUpdateDialog = false">稍后再说</el-button>
-        <el-button type="primary" @click="openReleasePage">前往下载</el-button>
+        <template v-if="!isDownloadingUpdate">
+          <el-button @click="showUpdateDialog = false">稍后再说</el-button>
+          <el-button type="primary" @click="downloadAndInstallUpdate">
+            {{ updateInfo?.downloadUrl ? '立即更新' : '前往下载' }}
+          </el-button>
+        </template>
+        <template v-else>
+          <el-button disabled>下载中...</el-button>
+        </template>
       </template>
     </el-dialog>
   </div>
@@ -4902,6 +4956,26 @@ html.dark .el-radio-button__inner {
   color: var(--text-secondary);
   white-space: pre-wrap;
   line-height: 1.6;
+}
+
+.update-progress {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.update-progress-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.update-progress-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  text-align: center;
 }
 
 /* 下载中心 */
