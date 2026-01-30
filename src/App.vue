@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from '@tauri-apps/plugin-dialog';
+import { openUrl } from '@tauri-apps/plugin-opener';
 // import { check } from '@tauri-apps/plugin-updater';
 // import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -256,7 +257,7 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.6.0';
+const currentVersion = '0.7.0';
 
 // 检查更新
 const checkForUpdate = async (silent = false) => {
@@ -310,10 +311,26 @@ const compareVersions = (a: string, b: string): number => {
   return 0;
 };
 
+// 打开外部链接
+const openExternalUrl = async (url: string) => {
+  try {
+    await openUrl(url);
+  } catch (error) {
+    console.error('打开链接失败:', error);
+    // 降级使用 window.open
+    window.open(url, '_blank');
+  }
+};
+
+// 打开 GitHub 仓库
+const openGitHub = () => {
+  openExternalUrl('https://github.com/gaopengbin/bilibili-downloader');
+};
+
 // 打开下载页面
 const openReleasePage = () => {
   if (updateInfo.value?.url) {
-    window.open(updateInfo.value.url, '_blank');
+    openExternalUrl(updateInfo.value.url);
   }
   showUpdateDialog.value = false;
 };
@@ -3634,7 +3651,7 @@ async function loadMoreFavorites() {
                 {{ isCheckingUpdate ? '检查中...' : '检查更新' }}
               </el-button>
               <span class="link-divider">|</span>
-              <a href="https://github.com/gaopengbin/bilibili-downloader" target="_blank">GitHub</a>
+              <span class="github-link" @click="openGitHub">GitHub</span>
             </p>
           </div>
         </div>
@@ -3926,6 +3943,26 @@ html.dark .el-radio-button__inner {
   --el-button-hover-border-color: #fc8bab;
   --el-button-active-bg-color: #e9678a;
   --el-button-active-border-color: #e9678a;
+  background-color: #fb7299 !important;
+  border-color: #fb7299 !important;
+  color: #fff !important;
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background-color: #fc8bab !important;
+  border-color: #fc8bab !important;
+  color: #fff !important;
+}
+
+.el-button--primary:active {
+  background-color: #e9678a !important;
+  border-color: #e9678a !important;
+}
+
+.el-button--primary.is-loading {
+  background-color: #fc8bab !important;
+  border-color: #fc8bab !important;
 }
 
 .el-radio-button__original-radio:checked + .el-radio-button__inner {
@@ -4074,7 +4111,7 @@ html.dark .el-message--error {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .header-btn {
@@ -4083,8 +4120,10 @@ html.dark .el-message--error {
   color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 6px 12px;
+  height: 32px;
+  border-radius: 6px;
 }
 
 .header-btn:hover {
@@ -4117,9 +4156,17 @@ html.dark .el-message--error {
 }
 
 .login-btn {
-  background: #fb7299;
-  border-color: #fb7299;
-  color: #fff;
+  background: #fb7299 !important;
+  border-color: #fb7299 !important;
+  color: #fff !important;
+  height: 32px;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.login-btn:hover {
+  background: #fc8bab !important;
+  border-color: #fc8bab !important;
 }
 
 /* Main */
@@ -5055,12 +5102,15 @@ html.dark .el-message--error {
   gap: 8px;
 }
 
-.settings-about-link a {
+.settings-about-link a,
+.settings-about-link .github-link {
   color: var(--el-color-primary);
   text-decoration: none;
+  cursor: pointer;
 }
 
-.settings-about-link a:hover {
+.settings-about-link a:hover,
+.settings-about-link .github-link:hover {
   text-decoration: underline;
 }
 
