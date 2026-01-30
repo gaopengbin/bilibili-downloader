@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AppHeader: typeof import('./src/components/layout/AppHeader.vue')['default']
+    DownloadCenter: typeof import('./src/components/common/DownloadCenter.vue')['default']
     ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElBadge: typeof import('element-plus/es')['ElBadge']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -42,5 +43,6 @@ declare module 'vue' {
     SettingsPanel: typeof import('./src/components/common/SettingsPanel.vue')['default']
     UpdateDialog: typeof import('./src/components/common/UpdateDialog.vue')['default']
     VideoCard: typeof import('./src/components/common/VideoCard.vue')['default']
+    VideoDetailPanel: typeof import('./src/components/bilibili/VideoDetailPanel.vue')['default']
   }
 }

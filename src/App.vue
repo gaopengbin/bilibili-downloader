@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -17,6 +17,7 @@ import {
 import { SettingsPanel, UpdateDialog, DownloadCenter, LoginDialog } from '@/components';
 import { HistoryPanel, FavoritesPanel, SearchResultPanel, VideoDetailPanel } from '@/components/bilibili';
 import { useAppStore, useUserStore } from '@/stores';
+import { useDownloadTasks } from '@/composables';
 
 // 引入类型
 import type { 
@@ -24,10 +25,53 @@ import type {
   SearchResultItem, SearchResult, PagedData, ApiResponse, DownloadTask, ProgressDetail,
   UserSettings, SeasonEpisode
 } from '@/types';
+import { defaultSettings } from '@/types';
 
 // 初始化 store
 const appStore = useAppStore();
 const userStore = useUserStore();
+
+// ==================== 用户设置 ====================
+
+const settings = ref<UserSettings>({
+  ...defaultSettings
+});
+
+// ==================== 下载任务管理 (使用 composable) ====================
+
+const {
+  downloadTasks,
+  downloadProgress,
+  isSelectMode,
+  selectedTaskIds,
+  expandedGroupIds,
+  toggleGroupExpand,
+  getDownloadingCount,
+  loadDownloadTasks,
+  saveDownloadTasks,
+  createDownloadTask,
+  createGroupTask,
+  handleProgressUpdate,
+  processDownloadQueue,
+  pauseDownload,
+  resumeDownload,
+  deleteTask,
+  openTaskFolder,
+  pauseGroupDownload,
+  resumeGroupDownload,
+  deleteGroupTask,
+  retryChildTask,
+  deleteChildTask,
+  retryFailedChildren,
+  clearCompletedTasks,
+  clearFailedTasks,
+  toggleSelectMode,
+  toggleTaskSelect,
+  toggleSelectAllActive,
+  confirmDeleteSelected,
+  pauseAllTasks,
+  resumeAllTasks,
+} = useDownloadTasks(settings);
 
 // ==================== 状态 ====================
 
@@ -37,8 +81,6 @@ const videoInfo = ref<VideoInfo | null>(null);
 const selectedQuality = ref('');
 const outputDir = ref('');
 const loading = ref(false);
-const downloading = ref(false);
-const downloadProgress = ref(0);
 
 const selectedEntries = ref<number[]>([]);
 const selectedSeasonEpisodes = ref<string[]>([]); // 合集选中的bvid列表
@@ -76,30 +118,12 @@ const favoritePage = ref(1);
 
 // 下载中心
 const showDownloadCenter = ref(false);
-const downloadTasks = ref<DownloadTask[]>([]);
-const currentTaskId = ref<string | null>(null);
-const downloadStage = ref('视频'); // 当前下载阶段
-const downloadSpeed = ref(''); // 下载速度
-const isPausing = ref(false); // 是否正在暂停
-const isProcessingQueue = ref(false); // 是否正在处理队列
-const isSelectMode = ref(false); // 是否处于批量选择模式
-const selectedTaskIds = ref<string[]>([]); // 选中的任务ID
-const expandedGroupIds = ref<string[]>([]); // 展开的组任务ID
 
 // 主题
 const isDarkMode = ref(false);
 
 // 设置面板
 const showSettings = ref(false);
-
-// 更新相关 - 已移至 stores/app.ts 和 components/common/UpdateDialog.vue
-
-// 用户设置
-import { defaultSettings } from '@/types';
-
-const settings = ref<UserSettings>({
-  ...defaultSettings
-});
 
 // 可拖动分栏
 const leftPanelWidth = ref(50); // 左侧面板宽度百分比
@@ -115,36 +139,6 @@ const isCurrentVideo = (bvid: string): boolean => {
   if (!videoUrl.value) return false;
   return videoUrl.value.includes(bvid);
 };
-
-// 顶级任务（不包含子任务，组任务或单独任务）
-const topLevelTasks = computed(() => 
-  downloadTasks.value.filter(t => !t.groupId)
-);
-
-// 已完成任务 - 仅显示顶级任务
-const completedTasks = computed(() => 
-  topLevelTasks.value.filter(t => t.status === 'completed')
-);
-
-// 失败任务 - 仅显示顶级任务
-const failedTasks = computed(() => 
-  topLevelTasks.value.filter(t => t.status === 'failed')
-);
-
-// 获取组任务的子任务
-function getChildTasks(groupId: string): DownloadTask[] {
-  return downloadTasks.value.filter(t => t.groupId === groupId);
-}
-
-// 切换组任务展开/折叠
-function toggleGroupExpand(groupId: string) {
-  const index = expandedGroupIds.value.indexOf(groupId);
-  if (index === -1) {
-    expandedGroupIds.value.push(groupId);
-  } else {
-    expandedGroupIds.value.splice(index, 1);
-  }
-}
 
 const searchTypes = [
   { label: '视频', value: 'video' as const },
@@ -278,42 +272,7 @@ onMounted(async () => {
   
   // 监听详细进度（支持多任务）
   await listen<ProgressDetail>('download-progress-detail', (event) => {
-    const { task_id, percent, stage, speed, downloaded, total_size } = event.payload;
-    downloadProgress.value = percent;
-    downloadStage.value = stage;
-    downloadSpeed.value = speed || '';
-    
-    // 根据 task_id 更新对应任务的进度
-    if (task_id) {
-      const task = downloadTasks.value.find(t => t.id === task_id);
-      if (task && task.status === 'downloading') {
-        task.progress = percent;
-        task.stage = stage;
-        task.speed = speed || '';
-        task.downloaded = downloaded || '';
-        task.totalSize = total_size || '';
-        
-        // 如果是子任务，更新父组任务状态
-        if (task.groupId) {
-          updateGroupTaskStatus(task.groupId);
-        }
-      }
-    } else if (currentTaskId.value) {
-      // 兼容旧版本（没有 task_id）
-      const task = downloadTasks.value.find(t => t.id === currentTaskId.value);
-      if (task) {
-        task.progress = percent;
-        task.stage = stage;
-        task.speed = speed || '';
-        task.downloaded = downloaded || '';
-        task.totalSize = total_size || '';
-        
-        // 如果是子任务，更新父组任务状态
-        if (task.groupId) {
-          updateGroupTaskStatus(task.groupId);
-        }
-      }
-    }
+    handleProgressUpdate(event.payload);
   });
 });
 
@@ -528,880 +487,7 @@ async function selectOutputDir() {
   }
 }
 
-// ==================== 下载任务管理 ====================
-
-// 加载下载任务历史
-async function loadDownloadTasks() {
-  try {
-    const result = await invoke<ApiResponse<string>>('load_download_tasks');
-    if (result.success && result.data) {
-      const tasks = JSON.parse(result.data) as DownloadTask[];
-      // 过滤掉超过7天的任务，并把下载中/等待中的任务标记为暂停（应用关闭中断）
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      downloadTasks.value = tasks
-        .filter(t => t.createdAt > sevenDaysAgo)
-        .map(t => (t.status === 'downloading' || t.status === 'waiting') 
-          ? { ...t, status: 'paused' as const, error: '应用关闭中断' } 
-          : t);
-    }
-  } catch (error) {
-    console.error('加载下载任务失败:', error);
-  }
-}
-
-// 保存下载任务（优化：不保存大的base64封面数据，但保留URL）
-async function saveDownloadTasks() {
-  try {
-    // 只保存最近100个任务，且去掉大的base64封面数据
-    const tasksToSave = downloadTasks.value.slice(0, 100).map(task => ({
-      ...task,
-      // 如果封面是base64格式（以data:开头）且超过1KB，不保存；URL则保留
-      cover: task.cover && task.cover.startsWith('data:') && task.cover.length > 1000 
-        ? null 
-        : task.cover,
-    }));
-    await invoke('save_download_tasks', {
-      tasksJson: JSON.stringify(tasksToSave),
-    });
-  } catch (error) {
-    console.error('保存下载任务失败:', error);
-  }
-}
-
-// 创建下载任务（初始状态为等待）- 不自动保存，由调用者决定何时保存
-function createDownloadTask(title: string, cover: string | null, downloadInfo: DownloadTask['downloadInfo'], groupId?: string): DownloadTask {
-  const task: DownloadTask = {
-    id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    title,
-    cover,
-    status: 'waiting',
-    progress: 0,
-    stage: '下载中',
-    createdAt: Date.now(),
-    downloadInfo,
-    groupId,
-  };
-  downloadTasks.value.unshift(task);
-  // 不在这里保存，由调用者批量保存
-  return task;
-}
-
-// 创建组任务
-function createGroupTask(title: string, cover: string | null, totalCount: number, finalDir: string | null): DownloadTask {
-  const task: DownloadTask = {
-    id: `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    title,
-    cover,
-    status: 'waiting',
-    progress: 0,
-    stage: '下载中',
-    createdAt: Date.now(),
-    isGroup: true,
-    childIds: [],
-    totalCount,
-    completedCount: 0,
-    downloadInfo: {
-      url: '',
-      outputDir: '',
-      tempDir: null,
-      finalDir,
-      quality: null,
-      videoTitle: title,
-      isPlaylistItem: false,
-      entryIndex: null,
-      entryTitle: null,
-      expectedId: null,
-    },
-  };
-  downloadTasks.value.unshift(task);
-  return task;
-}
-
-// 更新组任务状态
-function updateGroupTaskStatus(groupId: string) {
-  const groupTask = downloadTasks.value.find(t => t.id === groupId);
-  if (!groupTask || !groupTask.isGroup) return;
-  
-  const childTasks = getChildTasks(groupId);
-  const completedCount = childTasks.filter(t => t.status === 'completed').length;
-  const failedCount = childTasks.filter(t => t.status === 'failed').length;
-  const downloadingCount = childTasks.filter(t => t.status === 'downloading').length;
-  const waitingCount = childTasks.filter(t => t.status === 'waiting').length;
-  const pausedCount = childTasks.filter(t => t.status === 'paused').length;
-  const totalCount = childTasks.length;
-  
-  groupTask.completedCount = completedCount;
-  groupTask.failedCount = failedCount;
-  groupTask.totalCount = totalCount;
-  
-  // 计算总进度（只计算已完成的）
-  groupTask.progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  
-  // 更新组任务状态
-  if (completedCount === totalCount) {
-    // 全部完成
-    groupTask.status = 'completed';
-    groupTask.completedAt = Date.now();
-  } else if (failedCount === totalCount) {
-    // 全部失败
-    groupTask.status = 'failed';
-  } else if (downloadingCount > 0) {
-    // 有下载中的
-    groupTask.status = 'downloading';
-    groupTask.stage = `正在下载 ${completedCount}/${totalCount}`;
-  } else if (waitingCount > 0) {
-    // 有等待中的
-    groupTask.status = 'waiting';
-    if (failedCount > 0) {
-      groupTask.stage = `${failedCount} 个失败，${waitingCount} 个等待中`;
-    }
-  } else if (failedCount > 0 && completedCount > 0) {
-    // 部分完成、部分失败，没有进行中或等待的 -> 显示为部分失败
-    groupTask.status = 'failed';
-    groupTask.stage = `${completedCount} 个完成，${failedCount} 个失败`;
-  } else if (pausedCount > 0) {
-    // 有暂停的
-    groupTask.status = 'paused';
-  }
-}
-
-// 更新任务状态
-function updateTaskStatus(taskId: string, status: 'completed' | 'failed', error?: string) {
-  const task = downloadTasks.value.find(t => t.id === taskId);
-  if (task) {
-    // 如果任务已经是暂停状态，不要覆盖
-    if (task.status === 'paused') return;
-    task.status = status;
-    task.completedAt = Date.now();
-    if (error) task.error = error;
-    if (status === 'completed') {
-      task.progress = 100;
-      task.retryCount = 0; // 成功后重置重试计数
-    }
-    
-    // 如果是子任务，更新父组任务状态
-    if (task.groupId) {
-      updateGroupTaskStatus(task.groupId);
-    }
-    
-    saveDownloadTasks();
-  }
-}
-
-// 获取下载中的任务数量（不包括组任务）
-function getDownloadingCount(): number {
-  return downloadTasks.value.filter(t => t.status === 'downloading' && !t.isGroup).length;
-}
-
-// 获取等待中的任务（不包括组任务，组任务不直接下载）
-function getWaitingTasks(): DownloadTask[] {
-  return downloadTasks.value.filter(t => t.status === 'waiting' && !t.isGroup);
-}
-
-// 打开文件所在文件夹
-async function openTaskFolder(task: DownloadTask) {
-  const folderPath = task.downloadInfo?.finalDir || task.downloadInfo?.outputDir;
-  if (!folderPath) {
-    ElMessage.warning('无法获取文件夹路径');
-    return;
-  }
-  try {
-    await invoke('open_folder', { path: folderPath });
-  } catch (error) {
-    ElMessage.error('打开文件夹失败');
-  }
-}
-
-// 执行单个下载任务
-async function executeDownloadTask(task: DownloadTask): Promise<boolean> {
-  if (!task.downloadInfo) return false;
-  
-  const info = task.downloadInfo;
-  const taskId = task.id;
-  
-  // 验证 URL 有效性
-  if (!info.url || info.url === 'https://www.bilibili.com/video/' || info.url.endsWith('/video/')) {
-    updateTaskStatus(taskId, 'failed', '下载链接无效，缺少视频ID');
-    return false;
-  }
-  
-  task.status = 'downloading';
-  task.progress = 0;
-  task.stage = '下载中';
-  task.error = undefined;
-  currentTaskId.value = taskId;
-  saveDownloadTasks();
-  
-  try {
-    const result = await invoke<ApiResponse<string>>('download_video', {
-      url: info.url,
-      outputDir: info.outputDir,
-      tempDir: info.tempDir,
-      finalDir: info.finalDir,
-      quality: info.quality,
-      videoTitle: info.videoTitle,
-      isPlaylistItem: info.isPlaylistItem,
-      entryIndex: info.entryIndex,
-      entryTitle: info.entryTitle,
-      expectedId: info.expectedId,
-      taskId: taskId, // 传递任务ID用于进度追踪
-      aria2cConnections: settings.value.aria2cConnections,
-      preferCodec: settings.value.preferCodec || null,
-    });
-
-    // 重新获取任务状态（可能已被暂停）
-    const currentTask = downloadTasks.value.find(t => t.id === taskId);
-    if (currentTask?.status === 'paused') {
-      // 已经被暂停，不更新状态
-      return false;
-    }
-
-    if (result.success) {
-      updateTaskStatus(taskId, 'completed');
-      return true;
-    } else {
-      // 检查是否需要自动重试
-      const retryCount = task.retryCount || 0;
-      if (retryCount < settings.value.maxRetryCount) {
-        task.retryCount = retryCount + 1;
-        task.status = 'waiting';
-        task.stage = `重试中 (${task.retryCount}/${settings.value.maxRetryCount})`;
-        task.progress = 0;
-        saveDownloadTasks();
-        console.log(`任务 ${taskId} 下载失败，自动重试 ${task.retryCount}/${settings.value.maxRetryCount}`);
-        return false; // 返回 false，让队列继续处理
-      } else {
-        updateTaskStatus(taskId, 'failed', result.error);
-        return false;
-      }
-    }
-  } catch (error) {
-    // 重新获取任务状态
-    const currentTask = downloadTasks.value.find(t => t.id === taskId);
-    if (currentTask?.status !== 'paused') {
-      // 检查是否需要自动重试
-      const retryCount = task.retryCount || 0;
-      if (retryCount < settings.value.maxRetryCount) {
-        task.retryCount = retryCount + 1;
-        task.status = 'waiting';
-        task.stage = `重试中 (${task.retryCount}/${settings.value.maxRetryCount})`;
-        task.progress = 0;
-        saveDownloadTasks();
-        console.log(`任务 ${taskId} 下载异常，自动重试 ${task.retryCount}/${settings.value.maxRetryCount}`);
-        return false;
-      } else {
-        updateTaskStatus(taskId, 'failed', String(error));
-      }
-    }
-    return false;
-  } finally {
-    // 如果这是当前任务，清除
-    if (currentTaskId.value === taskId) {
-      currentTaskId.value = null;
-    }
-  }
-}
-
-// 处理下载队列（支持并行下载）
-async function processDownloadQueue() {
-  if (isProcessingQueue.value) return;
-  isProcessingQueue.value = true;
-  downloading.value = true;
-  
-  // 收集所有用到的临时目录
-  const tempDirs = new Set<string>();
-  
-  try {
-    while (true) {
-      const waitingTasks = getWaitingTasks();
-      const downloadingCount = getDownloadingCount();
-      
-      // 没有等待中的任务，且没有下载中的任务，退出
-      if (waitingTasks.length === 0 && downloadingCount === 0) break;
-      
-      // 还有下载中的任务，但没有等待的，等待一下再检查
-      if (waitingTasks.length === 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        continue;
-      }
-      
-      // 已达到最大并行数，等待
-      if (downloadingCount >= settings.value.maxConcurrentDownloads) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        continue;
-      }
-      
-      // 可以启动新任务
-      const task = waitingTasks[0];
-      if (task.downloadInfo?.tempDir) {
-        tempDirs.add(task.downloadInfo.tempDir);
-      }
-      
-      // 异步启动任务（不等待完成）
-      executeDownloadTask(task).catch(console.error);
-      
-      // 给一点时间让任务状态更新
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-  } finally {
-    isProcessingQueue.value = false;
-    downloading.value = downloadTasks.value.some(t => t.status === 'downloading');
-    
-    // 清理空的临时目录
-    for (const tempDir of tempDirs) {
-      try {
-        await invoke('cleanup_temp_dir', { tempDir });
-      } catch (e) {
-        console.log('清理临时目录失败:', e);
-      }
-    }
-  }
-}
-
-// 暂停下载
-async function pauseDownload(task?: DownloadTask) {
-  const targetTask = task || downloadTasks.value.find(t => t.id === currentTaskId.value);
-  if (!targetTask) return;
-  
-  try {
-    // 先设置暂停状态
-    targetTask.status = 'paused';
-    saveDownloadTasks();
-    
-    // 如果是当前正在下载的任务，取消进程
-    if (targetTask.id === currentTaskId.value) {
-      isPausing.value = true;
-      await invoke('cancel_download');
-      isPausing.value = false;
-    }
-    ElMessage.info('下载已暂停');
-  } catch (error) {
-    isPausing.value = false;
-    console.error('暂停失败:', error);
-  }
-}
-
-// 继续下载（将任务加入队列）
-async function resumeDownload(task: DownloadTask) {
-  if (!task.downloadInfo) {
-    ElMessage.error('无法恢复，缺少下载信息');
-    return;
-  }
-  
-  // 检查 URL 是否有效
-  if (!task.downloadInfo.url || task.downloadInfo.url === 'https://www.bilibili.com/video/') {
-    ElMessage.error('下载链接无效');
-    return;
-  }
-  
-  // 设置为等待状态，加入队列
-  task.status = 'waiting';
-  task.error = undefined;
-  task.progress = 0;
-  
-  // 如果是子任务，同时更新父组任务状态
-  if (task.groupId) {
-    updateGroupTaskStatus(task.groupId);
-  }
-  
-  saveDownloadTasks();
-  
-  // 开始处理队列
-  processDownloadQueue();
-}
-
-// 删除任务
-async function deleteTask(task: DownloadTask) {
-  // 如果是下载中的任务，先取消下载
-  if (task.status === 'downloading') {
-    isPausing.value = true;
-    try {
-      await invoke('cancel_download');
-    } catch (e) {
-      // 忽略错误
-    }
-    isPausing.value = false;
-  }
-  
-  // 非已完成的任务，删除临时文件
-  if (task.status !== 'completed' && task.downloadInfo?.tempDir) {
-    try {
-      await invoke('delete_folder', { path: task.downloadInfo.tempDir });
-    } catch (e) {
-      console.error('删除临时文件夹失败:', e);
-    }
-  }
-  
-  const index = downloadTasks.value.findIndex(t => t.id === task.id);
-  if (index !== -1) {
-    downloadTasks.value.splice(index, 1);
-    saveDownloadTasks();
-  }
-}
-
-// 暂停组任务
-async function pauseGroupDownload(groupTask: DownloadTask) {
-  if (!groupTask.isGroup) return;
-  
-  const childTasks = getChildTasks(groupTask.id);
-  const activeChildren = childTasks.filter(t => t.status === 'downloading' || t.status === 'waiting');
-  
-  if (activeChildren.length === 0) return;
-  
-  // 取消当前下载
-  isPausing.value = true;
-  try {
-    await invoke('cancel_download');
-  } catch (e) {
-    // 忽略错误
-  }
-  isPausing.value = false;
-  
-  // 将所有活动子任务设为暂停
-  for (const child of activeChildren) {
-    child.status = 'paused';
-  }
-  
-  // 更新组状态
-  groupTask.status = 'paused';
-  saveDownloadTasks();
-  ElMessage.info('已暂停组内所有任务');
-}
-
-// 继续组任务
-function resumeGroupDownload(groupTask: DownloadTask) {
-  if (!groupTask.isGroup) return;
-  
-  const childTasks = getChildTasks(groupTask.id);
-  const pausedChildren = childTasks.filter(t => t.status === 'paused');
-  
-  if (pausedChildren.length === 0) return;
-  
-  // 将所有暂停子任务设为等待
-  for (const child of pausedChildren) {
-    child.status = 'waiting';
-    child.error = undefined;
-  }
-  
-  // 更新组状态
-  groupTask.status = 'waiting';
-  saveDownloadTasks();
-  ElMessage.success('已恢复组内所有任务');
-  
-  // 开始处理队列
-  processDownloadQueue();
-}
-
-// 删除组任务
-async function deleteGroupTask(groupTask: DownloadTask) {
-  if (!groupTask.isGroup) return;
-  
-  const childTasks = getChildTasks(groupTask.id);
-  
-  // 如果有正在下载的子任务，先取消
-  const downloadingChildren = childTasks.filter(t => t.status === 'downloading');
-  if (downloadingChildren.length > 0) {
-    isPausing.value = true;
-    try {
-      await invoke('cancel_download');
-    } catch (e) {
-      // 忽略错误
-    }
-    isPausing.value = false;
-  }
-  
-  // 删除临时文件（对于未完成的任务）
-  const tempDir = childTasks[0]?.downloadInfo?.tempDir;
-  if (tempDir && groupTask.status !== 'completed') {
-    try {
-      await invoke('delete_folder', { path: tempDir });
-    } catch (e) {
-      console.error('删除临时文件夹失败:', e);
-    }
-  }
-  
-  // 删除所有子任务和组任务
-  const idsToDelete = [groupTask.id, ...childTasks.map(t => t.id)];
-  downloadTasks.value = downloadTasks.value.filter(t => !idsToDelete.includes(t.id));
-  saveDownloadTasks();
-}
-
-// 重试单个子任务
-async function retryChildTask(child: DownloadTask) {
-  if (!child.groupId) return;
-  
-  // 将子任务状态设为等待
-  child.status = 'waiting';
-  child.progress = 0;
-  child.error = undefined;
-  child.stage = '';
-  child.speed = undefined;
-  child.downloaded = undefined;
-  child.totalSize = undefined;
-  child.retryCount = 0; // 手动重试时重置计数
-  
-  // 更新组任务状态
-  updateGroupTaskStatus(child.groupId);
-  saveDownloadTasks();
-  
-  ElMessage.success('已加入下载队列');
-  
-  // 开始处理队列
-  processDownloadQueue();
-}
-
-// 删除单个子任务
-async function deleteChildTask(groupId: string, childId: string) {
-  const groupTask = downloadTasks.value.find(t => t.id === groupId);
-  const child = downloadTasks.value.find(t => t.id === childId);
-  
-  if (!groupTask || !child) return;
-  
-  // 如果子任务正在下载，先取消
-  if (child.status === 'downloading') {
-    isPausing.value = true;
-    try {
-      await invoke('cancel_download');
-    } catch (e) {
-      // 忽略错误
-    }
-    isPausing.value = false;
-  }
-  
-  // 删除临时文件
-  if (child.status !== 'completed' && child.downloadInfo?.tempDir) {
-    try {
-      await invoke('delete_folder', { path: child.downloadInfo.tempDir });
-    } catch (e) {
-      console.error('删除临时文件夹失败:', e);
-    }
-  }
-  
-  // 从任务列表中删除子任务
-  const index = downloadTasks.value.findIndex(t => t.id === childId);
-  if (index !== -1) {
-    downloadTasks.value.splice(index, 1);
-  }
-  
-  // 更新组任务的 childIds
-  if (groupTask.childIds) {
-    const childIndex = groupTask.childIds.indexOf(childId);
-    if (childIndex !== -1) {
-      groupTask.childIds.splice(childIndex, 1);
-    }
-  }
-  
-  // 更新组任务状态
-  updateGroupTaskStatus(groupId);
-  
-  // 如果组任务没有子任务了，删除组任务
-  const remainingChildren = getChildTasks(groupId);
-  if (remainingChildren.length === 0) {
-    const groupIndex = downloadTasks.value.findIndex(t => t.id === groupId);
-    if (groupIndex !== -1) {
-      downloadTasks.value.splice(groupIndex, 1);
-    }
-  }
-  
-  saveDownloadTasks();
-}
-
-// 重试组任务中所有失败的子任务
-function retryFailedChildren(groupTask: DownloadTask) {
-  if (!groupTask.isGroup) return;
-  
-  const childTasks = getChildTasks(groupTask.id);
-  const failedChildren = childTasks.filter(t => t.status === 'failed');
-  
-  if (failedChildren.length === 0) return;
-  
-  // 将所有失败子任务设为等待
-  for (const child of failedChildren) {
-    child.status = 'waiting';
-    child.progress = 0;
-    child.error = undefined;
-    child.stage = '';
-    child.speed = undefined;
-    child.downloaded = undefined;
-    child.totalSize = undefined;
-    child.retryCount = 0; // 重置重试计数
-  }
-  
-  // 更新组任务状态
-  updateGroupTaskStatus(groupTask.id);
-  saveDownloadTasks();
-  
-  ElMessage.success(`已将 ${failedChildren.length} 个失败任务加入下载队列`);
-  
-  // 开始处理队列
-  processDownloadQueue();
-}
-
-// 清空已完成任务
-async function clearCompletedTasks() {
-  const count = completedTasks.value.length;
-  if (count === 0) return;
-  
-  try {
-    await ElMessageBox.confirm(
-      `确定清空 ${count} 个已完成任务？\n\n此操作仅删除下载记录，不会删除已下载的文件。`,
-      '清空已完成',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info',
-      }
-    );
-    
-    // 收集需要删除的任务ID（包括组任务的子任务）
-    const idsToDelete = new Set<string>();
-    for (const task of completedTasks.value) {
-      idsToDelete.add(task.id);
-      if (task.isGroup && task.childIds) {
-        task.childIds.forEach(id => idsToDelete.add(id));
-      }
-    }
-    
-    downloadTasks.value = downloadTasks.value.filter(t => !idsToDelete.has(t.id));
-    saveDownloadTasks();
-    ElMessage.success(`已清空 ${count} 个已完成任务`);
-  } catch {
-    // 用户取消
-  }
-}
-
-// 清空失败任务
-async function clearFailedTasks() {
-  const count = failedTasks.value.length;
-  if (count === 0) return;
-  
-  try {
-    await ElMessageBox.confirm(
-      `确定清空 ${count} 个失败任务？\n\n此操作会同时删除临时文件。`,
-      '清空失败任务',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    );
-    
-    // 删除临时文件
-    for (const task of failedTasks.value) {
-      if (task.downloadInfo?.tempDir) {
-        try {
-          await invoke('delete_folder', { path: task.downloadInfo.tempDir });
-        } catch (e) {
-          console.error('删除临时文件夹失败:', e);
-        }
-      }
-    }
-    
-    // 收集需要删除的任务ID（包括组任务的子任务）
-    const idsToDelete = new Set<string>();
-    for (const task of failedTasks.value) {
-      idsToDelete.add(task.id);
-      if (task.isGroup && task.childIds) {
-        task.childIds.forEach(id => idsToDelete.add(id));
-      }
-    }
-    
-    downloadTasks.value = downloadTasks.value.filter(t => !idsToDelete.has(t.id));
-    saveDownloadTasks();
-    ElMessage.success(`已清空 ${count} 个失败任务`);
-  } catch {
-    // 用户取消
-  }
-}
-
-// 切换批量选择模式
-function toggleSelectMode() {
-  isSelectMode.value = !isSelectMode.value;
-  if (!isSelectMode.value) {
-    selectedTaskIds.value = [];
-  }
-}
-
-// 切换任务选中状态
-function toggleTaskSelect(taskId: string) {
-  const index = selectedTaskIds.value.indexOf(taskId);
-  if (index === -1) {
-    selectedTaskIds.value.push(taskId);
-  } else {
-    selectedTaskIds.value.splice(index, 1);
-  }
-}
-
-// 全选/取消全选所有顶级任务
-function toggleSelectAllActive() {
-  const allTopLevelIds = topLevelTasks.value.map(t => t.id);
-  const allSelected = allTopLevelIds.every(id => selectedTaskIds.value.includes(id));
-  if (allSelected) {
-    selectedTaskIds.value = [];
-  } else {
-    selectedTaskIds.value = [...allTopLevelIds];
-  }
-}
-
-// 批量删除选中的任务
-async function deleteSelectedTasks(deleteFiles: boolean = false) {
-  const count = selectedTaskIds.value.length;
-  if (count === 0) return;
-  
-  const tasksToDelete = downloadTasks.value.filter(t => selectedTaskIds.value.includes(t.id));
-  
-  // 收集所有需要删除的任务ID（包括组任务的子任务）
-  const allIdsToDelete = new Set<string>(selectedTaskIds.value);
-  for (const task of tasksToDelete) {
-    if (task.isGroup && task.childIds) {
-      task.childIds.forEach(id => allIdsToDelete.add(id));
-    }
-  }
-  
-  // 获取所有要删除的任务
-  const allTasksToDelete = downloadTasks.value.filter(t => allIdsToDelete.has(t.id));
-  
-  // 如果有正在下载的任务，先取消
-  const downloadingTasks = allTasksToDelete.filter(t => t.status === 'downloading');
-  if (downloadingTasks.length > 0) {
-    isPausing.value = true;
-    try {
-      await invoke('cancel_download');
-    } catch (e) {
-      // 忽略错误
-    }
-    isPausing.value = false;
-  }
-  
-  // 删除文件（使用Set避免重复删除同一目录）
-  const deletedDirs = new Set<string>();
-  for (const task of allTasksToDelete) {
-    // 已完成的任务：根据 deleteFiles 参数决定是否删除
-    if (task.status === 'completed') {
-      if (deleteFiles && task.downloadInfo?.finalDir && !deletedDirs.has(task.downloadInfo.finalDir)) {
-        try {
-          await invoke('delete_folder', { path: task.downloadInfo.finalDir });
-          deletedDirs.add(task.downloadInfo.finalDir);
-        } catch (e) {
-          console.error('删除文件夹失败:', e);
-        }
-      }
-    } else {
-      // 下载中/等待中/暂停/失败的任务：始终删除临时文件
-      if (task.downloadInfo?.tempDir && !deletedDirs.has(task.downloadInfo.tempDir)) {
-        try {
-          await invoke('delete_folder', { path: task.downloadInfo.tempDir });
-          deletedDirs.add(task.downloadInfo.tempDir);
-        } catch (e) {
-          console.error('删除临时文件夹失败:', e);
-        }
-      }
-    }
-  }
-  
-  // 删除任务记录
-  downloadTasks.value = downloadTasks.value.filter(t => !allIdsToDelete.has(t.id));
-  selectedTaskIds.value = [];
-  isSelectMode.value = false;
-  saveDownloadTasks();
-  ElMessage.success(`已删除 ${count} 个任务`);
-}
-
-// 确认批量删除
-async function confirmDeleteSelected() {
-  const count = selectedTaskIds.value.length;
-  if (count === 0) {
-    ElMessage.warning('请先选择要删除的任务');
-    return;
-  }
-  
-  // 检查是否有已完成的任务（有文件可删除）
-  const completedTasks = downloadTasks.value.filter(
-    t => selectedTaskIds.value.includes(t.id) && t.status === 'completed'
-  );
-  const completedCount = completedTasks.length;
-  
-  if (completedCount > 0) {
-    // 有已完成的任务，提供两个删除选项
-    try {
-      await ElMessageBox({
-        title: '删除任务',
-        message: `确定删除选中的 ${count} 个任务？其中 ${completedCount} 个已下载完成。`,
-        showCancelButton: true,
-        confirmButtonText: '同时删除文件',
-        cancelButtonText: '仅删除记录',
-        distinguishCancelAndClose: true,
-        type: 'warning',
-        confirmButtonClass: 'el-button--danger',
-      });
-      // 确认 - 同时删除文件
-      await deleteSelectedTasks(true);
-    } catch (actionResult) {
-      if (actionResult === 'cancel') {
-        // 仅删除记录
-        await deleteSelectedTasks(false);
-      }
-      // close - 用户关闭弹窗，不做任何事
-    }
-  } else {
-    // 没有已完成的任务，直接确认删除
-    try {
-      await ElMessageBox.confirm(
-        `确定删除选中的 ${count} 个任务？`,
-        '删除任务',
-        {
-          confirmButtonText: '删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        }
-      );
-      await deleteSelectedTasks(false);
-    } catch {
-      // 用户取消
-    }
-  }
-}
-
-// 全部暂停
-async function pauseAllTasks() {
-  const activeTasks = downloadTasks.value.filter(
-    t => t.status === 'downloading' || t.status === 'waiting'
-  );
-  if (activeTasks.length === 0) return;
-  
-  // 先取消当前下载
-  isPausing.value = true;
-  try {
-    await invoke('cancel_download');
-  } catch (e) {
-    // 忽略错误
-  }
-  isPausing.value = false;
-  
-  // 将所有活动任务设为暂停
-  for (const task of activeTasks) {
-    task.status = 'paused';
-  }
-  saveDownloadTasks();
-  ElMessage.info(`已暂停 ${activeTasks.length} 个任务`);
-}
-
-// 全部开始
-function resumeAllTasks() {
-  const pausedTasks = downloadTasks.value.filter(t => t.status === 'paused');
-  if (pausedTasks.length === 0) return;
-  
-  // 将所有暂停任务设为等待
-  for (const task of pausedTasks) {
-    task.status = 'waiting';
-    task.error = undefined;
-  }
-  saveDownloadTasks();
-  ElMessage.success(`已恢复 ${pausedTasks.length} 个任务`);
-  
-  // 开始处理队列
-  processDownloadQueue();
-}
+// ==================== 下载功能 ====================
 
 async function startDownload() {
   if (!videoInfo.value) return;
