@@ -8,14 +8,14 @@ import { open } from '@tauri-apps/plugin-dialog';
 // import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { 
-  Search, Download, FolderOpened, VideoPlay, Clock, Star,
-  User, Link, Close, Refresh, CaretRight, Sunny, Moon,
+  Search, Download, VideoPlay, Clock, Star,
+  User, Link, Close, Sunny, Moon,
   Setting
 } from '@element-plus/icons-vue';
 
 // 引入新拆分的组件
 import { SettingsPanel, UpdateDialog, DownloadCenter, LoginDialog } from '@/components';
-import { HistoryPanel, FavoritesPanel, SearchResultPanel } from '@/components/bilibili';
+import { HistoryPanel, FavoritesPanel, SearchResultPanel, VideoDetailPanel } from '@/components/bilibili';
 import { useAppStore, useUserStore } from '@/stores';
 
 // 初始化 store
@@ -2356,214 +2356,37 @@ async function loadMoreFavorites() {
 
       <!-- 右侧详情区 -->
       <div class="right-panel" :style="{ width: (100 - leftPanelWidth) + '%' }">
-        <!-- 加载中状态 -->
-        <div v-if="loading" class="loading-card">
-          <el-icon class="is-loading" :size="40"><Refresh /></el-icon>
-          <p>正在解析视频...</p>
-        </div>
-        
-        <div v-else-if="videoInfo" class="video-detail-card">
-          <div class="detail-cover">
-            <el-image v-if="videoInfo.thumbnail" :src="videoInfo.thumbnail" fit="cover">
-              <template #error>
-                <div class="image-error">
-                  <el-icon :size="40"><VideoPlay /></el-icon>
-                </div>
-              </template>
-            </el-image>
-            <div v-else class="image-placeholder">
-              <el-icon :size="40"><VideoPlay /></el-icon>
-            </div>
-          </div>
-          <div class="detail-info">
-            <h2 class="detail-title">{{ videoInfo.title }}</h2>
-            <div class="detail-meta">
-              <span v-if="videoInfo.uploader" class="meta-item">
-                <el-icon><User /></el-icon>
-                {{ videoInfo.uploader }}
-              </span>
-              <span v-if="videoInfo.duration" class="meta-item">
-                <el-icon><Clock /></el-icon>
-                {{ formatDuration(videoInfo.duration) }}
-              </span>
-              <el-tag v-if="videoInfo.is_playlist" type="warning" size="small">
-                {{ videoInfo.entries.length }}P
-              </el-tag>
-            </div>
-            
-            <!-- 简介 -->
-            <div v-if="videoInfo.description" class="detail-desc" :class="{ expanded: descExpanded }">
-              <div class="desc-content">{{ videoInfo.description }}</div>
-              <div class="desc-toggle" @click="descExpanded = !descExpanded">
-                {{ descExpanded ? '收起' : '展开' }}
-              </div>
-            </div>
-            
-            <div v-if="videoInfo.formats.length > 0" class="quality-selector">
-              <span class="label">清晰度</span>
-              <el-radio-group v-model="selectedQuality" size="small">
-                <el-radio-button
-                  v-for="format in videoInfo.formats"
-                  :key="format.format_id"
-                  :value="format.height?.toString() || ''"
-                >
-                  {{ format.height }}p
-                </el-radio-button>
-              </el-radio-group>
-            </div>
-
-            <!-- 分P选择（仅当没有合集时显示，有合集时分P整合到合集列表中） -->
-            <div v-if="videoInfo.is_playlist && videoInfo.entries.length > 0 && !videoInfo.season" class="episode-section">
-              <div class="episode-header">
-                <span>选集列表</span>
-                <el-button size="small" text @click="toggleSelectAll">
-                  {{ selectedEntries.length === videoInfo.entries.length ? '取消全选' : '全选' }}
-                </el-button>
-                <span class="select-count">{{ selectedEntries.length }}/{{ videoInfo.entries.length }}</span>
-              </div>
-              <div class="episode-list">
-                <el-checkbox-group v-model="selectedEntries">
-                  <div 
-                    v-for="entry in videoInfo.entries" 
-                    :key="entry.index"
-                    class="episode-item"
-                  >
-                    <el-checkbox :value="entry.index">
-                      <div class="episode-content">
-                        <span class="episode-index">P{{ entry.index }}</span>
-                        <span class="episode-title">{{ entry.title || `第${entry.index}集` }}</span>
-                        <span v-if="entry.duration" class="episode-duration">{{ formatDuration(entry.duration) }}</span>
-                      </div>
-                    </el-checkbox>
-                  </div>
-                </el-checkbox-group>
-              </div>
-            </div>
-            
-            <!-- 合集信息（支持嵌套分P展示） -->
-            <div v-if="videoInfo.season" class="season-section">
-              <div class="season-header">
-                <el-tag type="success" size="small">合集</el-tag>
-                <span class="season-title">{{ videoInfo.season.title }}</span>
-                <el-button size="small" text @click="toggleSeasonSelectAll">
-                  {{ selectedSeasonEpisodes.length === videoInfo.season.episodes.length ? '取消全选' : '全选' }}
-                </el-button>
-                <span class="select-count">{{ selectedSeasonEpisodes.length }}/{{ videoInfo.season.episodes.length }}</span>
-              </div>
-              <div class="season-list">
-                <div 
-                  v-for="(ep, idx) in videoInfo.season.episodes" 
-                  :key="ep.bvid"
-                  class="season-item-wrapper"
-                >
-                  <!-- 合集项主行 -->
-                  <div class="season-item" :class="{ 'current': isCurrentVideo(ep.bvid), 'expanded': expandedSeasonItems.has(ep.bvid) }">
-                    <el-checkbox 
-                      :model-value="isSeasonItemFullySelected(ep.bvid) || selectedSeasonEpisodes.includes(ep.bvid)" 
-                      :indeterminate="isSeasonItemIndeterminate(ep.bvid)"
-                      @click.stop
-                      @change="toggleSeasonEpisodeSelect(ep.bvid)"
-                    />
-                    <div class="season-item-content" @click="selectFromList(ep.bvid, ep.cover)">
-                      <span class="season-item-index">{{ idx + 1 }}</span>
-                      <span class="season-item-title">{{ ep.title }}</span>
-                      <span class="season-item-duration">{{ formatDuration(ep.duration) }}</span>
-                    </div>
-                    <!-- 展开/折叠按钮 -->
-                    <el-button 
-                      class="expand-btn"
-                      :icon="expandedSeasonItems.has(ep.bvid) ? 'ArrowDown' : 'ArrowRight'"
-                      size="small"
-                      text
-                      :loading="seasonItemLoading.has(ep.bvid)"
-                      @click.stop="toggleSeasonItemExpand(ep.bvid)"
-                      title="查看分P"
-                    >
-                      <el-icon v-if="!seasonItemLoading.has(ep.bvid)">
-                        <CaretRight :class="{ 'rotated': expandedSeasonItems.has(ep.bvid) }" />
-                      </el-icon>
-                    </el-button>
-                  </div>
-                  
-                  <!-- 分P子列表 -->
-                  <div 
-                    v-if="expandedSeasonItems.has(ep.bvid) && seasonItemEntries.get(ep.bvid)?.length" 
-                    class="season-item-entries"
-                  >
-                    <div class="entries-header" v-if="(seasonItemEntries.get(ep.bvid)?.length || 0) > 1">
-                      <span class="entries-count">共 {{ seasonItemEntries.get(ep.bvid)?.length }} 个分P</span>
-                      <el-button size="small" text @click.stop="toggleSeasonItemSelectAll(ep.bvid)">
-                        {{ getSeasonItemSelectedCount(ep.bvid) === (seasonItemEntries.get(ep.bvid)?.length || 0) ? '取消全选' : '全选' }}
-                      </el-button>
-                    </div>
-                    <div 
-                      v-for="entry in seasonItemEntries.get(ep.bvid)" 
-                      :key="entry.index"
-                      class="entry-item"
-                      :class="{ 'selected': (selectedSeasonEntries.get(ep.bvid) || []).includes(entry.index) }"
-                      @click.stop="toggleSeasonEntrySelect(ep.bvid, entry.index)"
-                    >
-                      <el-checkbox 
-                        :model-value="(selectedSeasonEntries.get(ep.bvid) || []).includes(entry.index)"
-                        @click.stop
-                        @change="toggleSeasonEntrySelect(ep.bvid, entry.index)"
-                      />
-                      <span class="entry-index">P{{ entry.index }}</span>
-                      <span class="entry-title">{{ entry.title }}</span>
-                      <span v-if="entry.duration" class="entry-duration">{{ formatDuration(entry.duration) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <!-- 下载区域 -->
-          <div class="download-section">
-            <div class="output-dir">
-              <el-input v-model="outputDir" placeholder="选择保存位置" readonly size="small">
-                <template #prefix>
-                  <el-icon><FolderOpened /></el-icon>
-                </template>
-                <template #append>
-                  <el-button @click="selectOutputDir">浏览</el-button>
-                </template>
-              </el-input>
-            </div>
-            
-            <el-button 
-              v-if="videoInfo?.season && selectedSeasonEpisodes.length > 0"
-              type="primary" 
-              size="large"
-              class="download-btn"
-              :disabled="!outputDir"
-              @click="downloadSeason"
-            >
-              <el-icon><Download /></el-icon>
-              下载合集 {{ selectedSeasonEpisodes.length }} 个视频
-            </el-button>
-            <el-button 
-              v-else
-              type="primary" 
-              size="large"
-              class="download-btn"
-              :disabled="!outputDir || (videoInfo?.is_playlist && selectedEntries.length === 0)"
-              @click="startDownload"
-            >
-              <el-icon><Download /></el-icon>
-              {{ videoInfo?.is_playlist && selectedEntries.length > 0 
-                ? `下载 ${selectedEntries.length} 个视频` 
-                : '开始下载' }}
-            </el-button>
-          </div>
-        </div>
-        
-        <!-- 空状态 -->
-        <div v-else class="empty-detail">
-          <el-icon :size="64"><VideoPlay /></el-icon>
-          <p>选择视频开始下载</p>
-          <p class="tip">从左侧搜索或输入链接</p>
-        </div>
+        <VideoDetailPanel
+          :video-info="videoInfo"
+          :loading="loading"
+          :output-dir="outputDir"
+          :selected-quality="selectedQuality"
+          :selected-entries="selectedEntries"
+          :selected-season-episodes="selectedSeasonEpisodes"
+          :expanded-season-items="expandedSeasonItems"
+          :season-item-entries="seasonItemEntries"
+          :season-item-loading="seasonItemLoading"
+          :selected-season-entries="selectedSeasonEntries"
+          :desc-expanded="descExpanded"
+          :is-current-video="isCurrentVideo"
+          :is-season-item-indeterminate="isSeasonItemIndeterminate"
+          :is-season-item-fully-selected="isSeasonItemFullySelected"
+          :get-season-item-selected-count="getSeasonItemSelectedCount"
+          :format-duration="formatDuration"
+          @update:selected-quality="selectedQuality = $event"
+          @update:selected-entries="selectedEntries = $event"
+          @update:desc-expanded="descExpanded = $event"
+          @toggle-select-all="toggleSelectAll"
+          @toggle-season-select-all="toggleSeasonSelectAll"
+          @toggle-season-episode-select="toggleSeasonEpisodeSelect"
+          @toggle-season-item-expand="toggleSeasonItemExpand"
+          @toggle-season-item-select-all="toggleSeasonItemSelectAll"
+          @toggle-season-entry-select="toggleSeasonEntrySelect"
+          @select-from-list="selectFromList"
+          @select-output-dir="selectOutputDir"
+          @download-season="downloadSeason"
+          @start-download="startDownload"
+        />
       </div>
     </main>
 
