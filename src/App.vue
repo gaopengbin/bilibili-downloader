@@ -14,7 +14,7 @@ import {
 } from '@element-plus/icons-vue';
 
 // 引入新拆分的组件
-import { SettingsPanel, UpdateDialog, DownloadCenter } from '@/components';
+import { SettingsPanel, UpdateDialog, DownloadCenter, LoginDialog } from '@/components';
 import { HistoryPanel, FavoritesPanel, SearchResultPanel } from '@/components/bilibili';
 import { useAppStore, useUserStore } from '@/stores';
 
@@ -135,16 +135,6 @@ interface ApiResponse<T> {
   error?: string;
 }
 
-interface QrCodeResult {
-  qrcode_base64: string;
-  qrcode_key: string;
-}
-
-interface QrCodeStatus {
-  status: string;
-  message: string;
-}
-
 interface DownloadTask {
   id: string;
   title: string;
@@ -213,11 +203,6 @@ const seasonItemLoading = ref<Set<string>>(new Set()); // 正在加载分P的合
 const selectedSeasonEntries = ref<Map<string, number[]>>(new Map()); // 每个合集项选中的分P
 
 const userInfo = ref<UserInfo | null>(null);
-const showLoginDialog = ref(false);
-const qrcodeBase64 = ref('');
-const qrcodeKey = ref('');
-const qrcodeStatus = ref('');
-const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null);
 
 const activeTab = ref('search');
 
@@ -497,9 +482,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  if (pollingTimer.value) {
-    clearInterval(pollingTimer.value);
-  }
   // 移除拖动事件监听
   document.removeEventListener('mousemove', onDividerDrag);
   document.removeEventListener('mouseup', onDividerDragEnd);
@@ -547,60 +529,8 @@ async function checkLoginStatus() {
   }
 }
 
-async function openLoginDialog() {
-  showLoginDialog.value = true;
-  await refreshQrCode();
-}
-
-async function refreshQrCode() {
-  qrcodeStatus.value = '正在获取二维码...';
-  
-  try {
-    const result = await invoke<ApiResponse<QrCodeResult>>('get_qrcode');
-    
-    if (result.success && result.data) {
-      qrcodeBase64.value = result.data.qrcode_base64;
-      qrcodeKey.value = result.data.qrcode_key;
-      qrcodeStatus.value = '请使用哔哩哔哩APP扫码登录';
-      startPolling();
-    } else {
-      qrcodeStatus.value = result.error || '获取二维码失败';
-    }
-  } catch (error) {
-    qrcodeStatus.value = `获取二维码失败: ${error}`;
-  }
-}
-
-function startPolling() {
-  if (pollingTimer.value) {
-    clearInterval(pollingTimer.value);
-  }
-  
-  pollingTimer.value = setInterval(async () => {
-    try {
-      const result = await invoke<ApiResponse<QrCodeStatus>>('poll_qrcode', {
-        qrcodeKey: qrcodeKey.value
-      });
-      
-      if (result.success && result.data) {
-        const status = result.data.status;
-        qrcodeStatus.value = result.data.message;
-        
-        if (status === 'success') {
-          clearInterval(pollingTimer.value!);
-          pollingTimer.value = null;
-          showLoginDialog.value = false;
-          await checkLoginStatus();
-          ElMessage.success('登录成功');
-        } else if (status === 'expired') {
-          clearInterval(pollingTimer.value!);
-          pollingTimer.value = null;
-        }
-      }
-    } catch (error) {
-      console.error('轮询失败', error);
-    }
-  }, 2000);
+function openLoginDialog() {
+  userStore.openLoginDialog();
 }
 
 async function handleLogout() {
@@ -617,12 +547,12 @@ async function handleLogout() {
   }
 }
 
-function closeLoginDialog() {
-  showLoginDialog.value = false;
-  if (pollingTimer.value) {
-    clearInterval(pollingTimer.value);
-    pollingTimer.value = null;
-  }
+// 登录成功回调
+function onLoginSuccess(user: UserInfo) {
+  userInfo.value = user;
+  // 登录成功后刷新历史记录和收藏夹
+  loadHistory();
+  loadFavoriteFolders();
 }
 
 // ==================== 搜索功能 ====================
@@ -2638,32 +2568,7 @@ async function loadMoreFavorites() {
     </main>
 
     <!-- 登录弹窗 -->
-    <el-dialog
-      v-model="showLoginDialog"
-      title=""
-      width="360px"
-      :show-close="true"
-      :before-close="closeLoginDialog"
-      class="login-dialog"
-    >
-      <div class="qrcode-content">
-        <div class="qrcode-title">扫码登录</div>
-        <div class="qrcode-wrapper">
-          <img v-if="qrcodeBase64" :src="qrcodeBase64" class="qrcode-img" />
-          <div v-else class="qrcode-loading">
-            <el-icon class="is-loading" :size="32"><Refresh /></el-icon>
-          </div>
-        </div>
-        <p class="qrcode-tip">{{ qrcodeStatus }}</p>
-        <el-button 
-          v-if="qrcodeStatus.includes('过期')" 
-          type="primary" 
-          @click="refreshQrCode"
-        >
-          刷新二维码
-        </el-button>
-      </div>
-    </el-dialog>
+    <LoginDialog @login-success="onLoginSuccess" />
 
     <!-- 下载中心抽屉 -->
     <el-drawer
@@ -3954,50 +3859,6 @@ html.dark .el-message--error {
 
 .folder-select {
   width: 100%;
-  margin-bottom: 12px;
-}
-
-/* Login Dialog */
-.login-dialog .el-dialog__header {
-  display: none;
-}
-
-.qrcode-content {
-  text-align: center;
-  padding: 16px;
-}
-
-.qrcode-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 20px;
-}
-
-.qrcode-wrapper {
-  width: 180px;
-  height: 180px;
-  margin: 0 auto 16px;
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--bg-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.qrcode-img {
-  width: 100%;
-  height: 100%;
-}
-
-.qrcode-loading {
-  color: #fb7299;
-}
-
-.qrcode-tip {
-  color: var(--text-secondary);
-  font-size: 13px;
   margin-bottom: 12px;
 }
 
