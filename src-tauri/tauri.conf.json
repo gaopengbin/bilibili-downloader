@@ -9,14 +9,6 @@
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0NTYyMDM2NDIxOTc4NkIKUldScmVCbENOaUJXOUl1cStuZmZFR2VFVitCWlkzM2JleUhlQ3F4MElQSytuV0RxOERFTGxseTgK",
-      "endpoints": [
-        "https://github.com/gaopengbin/bilibili-downloader/releases/latest/download/latest.json"
-      ]
-    }
-  },
   "app": {
 "windows": [
       {
@@ -49,7 +41,6 @@
   },
 "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
     "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",

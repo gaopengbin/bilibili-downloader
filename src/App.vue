@@ -3612,16 +3612,9 @@ async function loadMoreFavorites() {
           <div class="settings-about">
             <p>哔哩哔哩下载器 v{{ currentVersion }}</p>
             <p class="settings-about-desc">基于 Tauri + Vue 3 开发</p>
-            <div class="settings-update">
-              <el-button 
-                type="primary" 
-                size="small" 
-                :loading="isCheckingUpdate || isDownloadingUpdate"
-                @click="checkForUpdate"
-              >
-                {{ isDownloadingUpdate ? `下载中 ${updateProgress}%` : (isCheckingUpdate ? '检查中...' : '检查更新') }}
-              </el-button>
-            </div>
+            <p class="settings-about-desc">
+              <a href="https://github.com/gaopengbin/bilibili-downloader/releases" target="_blank">检查更新</a>
+            </p>
           </div>
         </div>
       </div>
