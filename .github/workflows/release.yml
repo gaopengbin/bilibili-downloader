@@ -69,17 +69,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           name: 'B站视频下载器 v${{ steps.version.outputs.VERSION }}'
-          body: |
-            ## 下载
-            
-            | 版本 | 文件 | 说明 |
-            |------|------|------|
-            | 🚀 便携版 | `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_portable.zip` | 解压即用，无需安装 |
-            | 📦 安装版 | `bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64-setup.exe` | 双击安装 |
-            
-            ## 更新内容
-            
-            请查看 [更新日志](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详情。
+          generate_release_notes: false
+          body_path: RELEASE_NOTES.md
           files: |
             bilibili-downloader_${{ steps.version.outputs.VERSION }}_x64_portable.zip
             src-tauri/target/release/bundle/nsis/*-setup.exe

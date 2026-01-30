@@ -256,7 +256,7 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.4.0';
+const currentVersion = '0.5.0';
 
 // 检查更新
 const checkForUpdate = async (silent = false) => {
