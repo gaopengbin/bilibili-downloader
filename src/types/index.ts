@@ -31,6 +31,25 @@ export interface VideoEntry {
   thumbnail: string | null;
 }
 
+// 合集中的单集
+export interface SeasonEpisode {
+  bvid: string;
+  aid: number;
+  title: string;
+  cover: string | null;
+  duration: number;
+}
+
+// 视频合集信息
+export interface SeasonInfo {
+  season_id: number;
+  title: string;
+  cover: string | null;
+  total: number;
+  mid: number;
+  episodes: SeasonEpisode[];
+}
+
 // 通用视频信息
 export interface VideoInfo {
   title: string;
@@ -41,6 +60,8 @@ export interface VideoInfo {
   formats: VideoFormat[];
   is_playlist: boolean;
   entries: VideoEntry[];
+  // B站特有属性
+  season?: SeasonInfo | null | undefined;
   // 平台特有信息
   platform?: string;
   platformData?: any;
@@ -129,3 +150,64 @@ export const defaultSettings: UserSettings = {
   preferCodec: '',
   maxRetryCount: 3,
 };
+
+// ==================== B站特定类型定义 ====================
+
+// 用户信息
+export interface UserInfo {
+  username: string;
+  face: string;
+  level: number;
+  mid: number;
+}
+
+// 历史记录项
+export interface HistoryItem {
+  bvid: string;
+  title: string;
+  cover: string | null;
+  duration: number;
+  progress: number;
+  view_at: number;
+  author: string;
+}
+
+// 收藏夹
+export interface FavoriteFolder {
+  id: number;
+  title: string;
+  media_count: number;
+  cover: string | null;
+}
+
+// 收藏项
+export interface FavoriteItem {
+  bvid: string;
+  title: string;
+  cover: string | null;
+  duration: number;
+  author: string;
+  fav_time: number;
+}
+
+// 搜索结果项
+export interface SearchResultItem {
+  bvid: string;
+  title: string;
+  cover: string | null;
+  duration: string;
+  author: string;
+  play: number;
+  danmaku: number;
+  pubdate: number;
+  description: string;
+}
+
+// 搜索结果
+export interface SearchResult {
+  items: SearchResultItem[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_more: boolean;
+}

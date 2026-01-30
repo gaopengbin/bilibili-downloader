@@ -1,57 +1,11 @@
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import type { 
+  VideoInfo, VideoEntry, VideoFormat, SeasonEpisode, SeasonInfo, ApiResponse 
+} from '@/types';
 
-// ==================== 类型定义 ====================
-
-export interface VideoFormat {
-  height: number | null;
-  format_note: string | null;
-  format_id: string;
-}
-
-export interface VideoEntry {
-  index: number;
-  id: string;
-  title: string;
-  duration: number | null;
-  url: string;
-  thumbnail: string | null;
-}
-
-export interface SeasonEpisode {
-  bvid: string;
-  aid: number;
-  title: string;
-  cover: string | null;
-  duration: number;
-}
-
-export interface SeasonInfo {
-  season_id: number;
-  title: string;
-  cover: string | null;
-  total: number;
-  mid: number;
-  episodes: SeasonEpisode[];
-}
-
-export interface VideoInfo {
-  title: string;
-  uploader: string | null;
-  duration: number | null;
-  thumbnail: string | null;
-  description: string | null;
-  formats: VideoFormat[];
-  is_playlist: boolean;
-  entries: VideoEntry[];
-  season: SeasonInfo | null;
-}
-
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
+// 重新导出类型供外部使用
+export type { VideoInfo, VideoEntry, VideoFormat, SeasonEpisode, SeasonInfo };
 
 export function useVideoDetail() {
   // ==================== 状态 ====================

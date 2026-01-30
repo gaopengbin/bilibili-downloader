@@ -216,7 +216,7 @@ import {
   VideoPlay, User, Clock, Refresh, CaretRight, 
   FolderOpened, Download 
 } from '@element-plus/icons-vue';
-import type { VideoInfo, VideoEntry } from '@/composables/useVideoDetail';
+import type { VideoInfo, VideoEntry } from '@/types';
 
 defineProps<{
   videoInfo: VideoInfo | null;

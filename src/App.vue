@@ -18,168 +18,16 @@ import { SettingsPanel, UpdateDialog, DownloadCenter, LoginDialog } from '@/comp
 import { HistoryPanel, FavoritesPanel, SearchResultPanel, VideoDetailPanel } from '@/components/bilibili';
 import { useAppStore, useUserStore } from '@/stores';
 
+// 引入类型
+import type { 
+  VideoInfo, VideoEntry, UserInfo, HistoryItem, FavoriteFolder, FavoriteItem,
+  SearchResultItem, SearchResult, PagedData, ApiResponse, DownloadTask, ProgressDetail,
+  UserSettings, SeasonEpisode
+} from '@/types';
+
 // 初始化 store
 const appStore = useAppStore();
 const userStore = useUserStore();
-
-// ==================== 类型定义 ====================
-
-interface VideoFormat {
-  height: number | null;
-  format_note: string | null;
-  format_id: string;
-}
-
-interface VideoEntry {
-  index: number;
-  id: string;
-  title: string;
-  duration: number | null;
-  url: string;
-  thumbnail: string | null;
-}
-
-// 合集中的单集
-interface SeasonEpisode {
-  bvid: string;
-  aid: number;
-  title: string;
-  cover: string | null;
-  duration: number;
-}
-
-// 视频合集信息
-interface SeasonInfo {
-  season_id: number;
-  title: string;
-  cover: string | null;
-  total: number;
-  mid: number;
-  episodes: SeasonEpisode[];
-}
-
-interface VideoInfo {
-  title: string;
-  uploader: string | null;
-  duration: number | null;
-  thumbnail: string | null;
-  description: string | null;
-  formats: VideoFormat[];
-  is_playlist: boolean;
-  entries: VideoEntry[];
-  season: SeasonInfo | null;
-}
-
-interface UserInfo {
-  username: string;
-  face: string;
-  level: number;
-  mid: number;
-}
-
-interface HistoryItem {
-  bvid: string;
-  title: string;
-  cover: string | null;
-  duration: number;
-  progress: number;
-  view_at: number;
-  author: string;
-}
-
-interface FavoriteFolder {
-  id: number;
-  title: string;
-  media_count: number;
-  cover: string | null;
-}
-
-interface FavoriteItem {
-  bvid: string;
-  title: string;
-  cover: string | null;
-  duration: number;
-  author: string;
-  fav_time: number;
-}
-
-interface SearchResultItem {
-  bvid: string;
-  title: string;
-  cover: string | null;
-  duration: string;
-  author: string;
-  play: number;
-  danmaku: number;
-  pubdate: number;
-  description: string;
-}
-
-interface SearchResult {
-  items: SearchResultItem[];
-  page: number;
-  page_size: number;
-  total: number;
-  has_more: boolean;
-}
-
-interface PagedData<T> {
-  items: T[];
-  has_more: boolean;
-  cursor?: number;
-}
-
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
-
-interface DownloadTask {
-  id: string;
-  title: string;
-  cover: string | null;
-  status: 'downloading' | 'completed' | 'failed' | 'paused' | 'waiting';
-  progress: number;
-  stage: string; // 视频/音频/合并中
-  speed?: string; // 下载速度
-  downloaded?: string; // 已下载大小
-  totalSize?: string; // 总大小
-  createdAt: number;
-  completedAt?: number;
-  error?: string;
-  // 恢复下载所需信息
-  downloadInfo?: {
-    url: string;
-    outputDir: string;      // 基础目录
-    tempDir: string | null; // 临时下载目录（多P用）
-    finalDir: string | null; // 最终目录（多P用）
-    quality: string | null;
-    videoTitle: string | null;
-    isPlaylistItem: boolean;
-    entryIndex: number | null;
-    entryTitle: string | null;
-    expectedId: string | null;
-  };
-  // 组任务支持
-  groupId?: string; // 所属组任务ID
-  isGroup?: boolean; // 是否是组任务
-  childIds?: string[]; // 子任务ID列表（仅组任务有）
-  totalCount?: number; // 总任务数（仅组任务有）
-  completedCount?: number; // 已完成数（仅组任务有）
-  failedCount?: number; // 失败数（仅组任务有）
-  retryCount?: number; // 已重试次数
-}
-
-interface ProgressDetail {
-  task_id?: string;
-  percent: number;
-  stage: string;
-  stage_index: number;
-  speed?: string;
-  downloaded?: string;
-  total_size?: string;
-}
 
 // ==================== 状态 ====================
 
@@ -247,22 +95,10 @@ const showSettings = ref(false);
 // 更新相关 - 已移至 stores/app.ts 和 components/common/UpdateDialog.vue
 
 // 用户设置
-interface UserSettings {
-  maxConcurrentDownloads: number;  // 最大并行下载数
-  defaultOutputDir: string;        // 默认下载目录
-  defaultQuality: string;          // 默认清晰度: '' | '360' | '480' | '720' | '1080' | '4k'
-  aria2cConnections: number;       // aria2c 并发连接数
-  preferCodec: string;             // 编码偏好: '' | 'avc' | 'hevc' | 'av1'
-  maxRetryCount: number;           // 最大重试次数
-}
+import { defaultSettings } from '@/types';
 
 const settings = ref<UserSettings>({
-  maxConcurrentDownloads: 3,
-  defaultOutputDir: '',
-  defaultQuality: '',
-  aria2cConnections: 16,
-  preferCodec: '',
-  maxRetryCount: 3,
+  ...defaultSettings
 });
 
 // 可拖动分栏
