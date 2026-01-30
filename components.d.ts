@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppHeader: typeof import('./src/components/layout/AppHeader.vue')['default']
     ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElBadge: typeof import('element-plus/es')['ElBadge']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -32,5 +33,11 @@ declare module 'vue' {
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElTag: typeof import('element-plus/es')['ElTag']
+    LoginDialog: typeof import('./src/components/bilibili/LoginDialog.vue')['default']
+    RouterLink: typeof import('vue-router')['RouterLink']
+    RouterView: typeof import('vue-router')['RouterView']
+    SettingsPanel: typeof import('./src/components/common/SettingsPanel.vue')['default']
+    UpdateDialog: typeof import('./src/components/common/UpdateDialog.vue')['default']
+    VideoCard: typeof import('./src/components/common/VideoCard.vue')['default']
   }
 }

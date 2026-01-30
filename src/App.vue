@@ -4,7 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from '@tauri-apps/plugin-dialog';
-import { openUrl } from '@tauri-apps/plugin-opener';
 // import { check } from '@tauri-apps/plugin-updater';
 // import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -13,6 +12,13 @@ import {
   User, Link, Close, Refresh, CaretRight, Sunny, Moon, RefreshRight,
   Folder, Setting
 } from '@element-plus/icons-vue';
+
+// 引入新拆分的组件
+import { SettingsPanel, UpdateDialog } from '@/components';
+import { useAppStore } from '@/stores';
+
+// 初始化 store
+const appStore = useAppStore();
 
 // ==================== 类型定义 ====================
 
@@ -251,150 +257,7 @@ const isDarkMode = ref(false);
 // 设置面板
 const showSettings = ref(false);
 
-// 更新相关
-const isCheckingUpdate = ref(false);
-const isDownloadingUpdate = ref(false);
-const updateDownloadProgress = ref(0);
-const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
-const showUpdateDialog = ref(false);
-const currentVersion = '0.10.1';
-
-// 从更新日志中提取关键更新内容
-const extractKeyUpdates = (body: string): string[] => {
-  if (!body) return [];
-  
-  const updates: string[] = [];
-  const lines = body.split('\n');
-  
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // 匹配以 - 或 * 开头的列表项，提取关键内容
-    if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
-      // 去掉开头的 - 或 * 和 emoji
-      let content = trimmed.slice(1).trim();
-      // 去掉开头的 emoji (常见格式如 ✨ 🐛 🎨 等)
-      content = content.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
-      // 提取 **xxx** 中的内容作为标题
-      const boldMatch = content.match(/\*\*(.+?)\*\*/);
-      if (boldMatch) {
-        updates.push(boldMatch[1]);
-      } else if (content.length > 0 && content.length < 50) {
-        updates.push(content);
-      }
-    }
-  }
-  
-  return updates.slice(0, 5); // 最多显示5条
-};
-
-// 计算属性：关键更新列表
-const keyUpdates = computed(() => {
-  if (!updateInfo.value?.body) return [];
-  return extractKeyUpdates(updateInfo.value.body);
-});
-
-// 检查更新
-const checkForUpdate = async (silent = false) => {
-  if (isCheckingUpdate.value) return;
-  
-  isCheckingUpdate.value = true;
-  try {
-    const response = await fetch('https://api.github.com/repos/gaopengbin/bilibili-downloader/releases/latest');
-    if (!response.ok) throw new Error('获取更新信息失败');
-    
-    const data = await response.json();
-    const latestVersion = data.tag_name.replace(/^v/, ''); // 去掉 v 前缀
-    
-    // 比较版本号
-    if (compareVersions(latestVersion, currentVersion) > 0) {
-      // 查找安装包下载链接 (优先 setup.exe)
-      const assets = data.assets || [];
-      const setupAsset = assets.find((a: { name: string }) => a.name.endsWith('_setup.exe') || a.name.endsWith('-setup.exe'));
-      
-      updateInfo.value = {
-        version: latestVersion,
-        body: data.body,
-        url: data.html_url,
-        downloadUrl: setupAsset?.browser_download_url
-      };
-      showUpdateDialog.value = true;
-    } else if (!silent) {
-      ElMessage.success('当前已是最新版本');
-    }
-  } catch (error) {
-    console.error('检查更新失败:', error);
-    if (!silent) {
-      ElMessage.error('检查更新失败，请稍后重试');
-    }
-  } finally {
-    isCheckingUpdate.value = false;
-  }
-};
-
-// 版本号比较 (返回 1: a > b, -1: a < b, 0: a == b)
-const compareVersions = (a: string, b: string): number => {
-  const partsA = a.split('.').map(Number);
-  const partsB = b.split('.').map(Number);
-  
-  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-    const numA = partsA[i] || 0;
-    const numB = partsB[i] || 0;
-    if (numA > numB) return 1;
-    if (numA < numB) return -1;
-  }
-  return 0;
-};
-
-// 打开外部链接
-const openExternalUrl = async (url: string) => {
-  try {
-    await openUrl(url);
-  } catch (error) {
-    console.error('打开链接失败:', error);
-    // 降级使用 window.open
-    window.open(url, '_blank');
-  }
-};
-
-// 打开 GitHub 仓库
-const openGitHub = () => {
-  openExternalUrl('https://github.com/gaopengbin/bilibili-downloader');
-};
-
-// 打开下载页面
-const openReleasePage = () => {
-  if (updateInfo.value?.url) {
-    openExternalUrl(updateInfo.value.url);
-  }
-  showUpdateDialog.value = false;
-};
-
-// 下载并安装更新
-const downloadAndInstallUpdate = async () => {
-  if (!updateInfo.value?.downloadUrl) {
-    // 没有直接下载链接，打开网页
-    openReleasePage();
-    return;
-  }
-  
-  isDownloadingUpdate.value = true;
-  updateDownloadProgress.value = 0;
-  
-  try {
-    // 调用后端下载并安装
-    await invoke('download_and_install_update', {
-      url: updateInfo.value.downloadUrl,
-      version: updateInfo.value.version
-    });
-    
-    // 下载完成，后端会自动启动安装程序并退出应用
-  } catch (error: unknown) {
-    console.error('下载更新失败:', error);
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    ElMessage.error(`下载更新失败: ${errorMsg}`);
-    isDownloadingUpdate.value = false;
-  }
-};
+// 更新相关 - 已移至 stores/app.ts 和 components/common/UpdateDialog.vue
 
 // 用户设置
 interface UserSettings {
@@ -513,27 +376,7 @@ function loadSettings() {
   }
 }
 
-// 保存用户设置
-function saveSettings() {
-  try {
-    localStorage.setItem('userSettings', JSON.stringify(settings.value));
-  } catch (error) {
-    console.error('保存设置失败:', error);
-  }
-}
-
-// 选择默认下载目录
-async function selectDefaultOutputDir() {
-  const selected = await open({
-    directory: true,
-    multiple: false,
-    title: '选择默认下载目录',
-  });
-  if (selected) {
-    settings.value.defaultOutputDir = selected as string;
-    saveSettings();
-  }
-}
+// 选择默认下载目录 - 已移至 SettingsPanel 组件
 
 onMounted(async () => {
   initTheme(); // 初始化主题
@@ -564,7 +407,7 @@ onMounted(async () => {
   
   // 静默检查更新（启动后延迟3秒检查，不打扰用户）
   setTimeout(() => {
-    checkForUpdate(true);
+    appStore.checkForUpdate(true);
   }, 3000);
   
   // 监听窗口关闭事件
@@ -623,7 +466,7 @@ onMounted(async () => {
   
   // 监听更新下载进度
   await listen<number>('update-download-progress', (event) => {
-    updateDownloadProgress.value = event.payload;
+    appStore.updateDownloadProgress = event.payload;
   });
   
   // 监听详细进度（支持多任务）
@@ -3562,222 +3405,11 @@ async function loadMoreFavorites() {
       direction="rtl"
       size="400px"
     >
-      <div class="settings-panel">
-        <!-- 下载设置 -->
-        <div class="settings-section">
-          <div class="settings-section-title">下载设置</div>
-          
-          <div class="settings-item">
-            <div class="settings-label">最大并行下载数</div>
-            <el-input-number 
-              v-model="settings.maxConcurrentDownloads" 
-              :min="1" 
-              :max="10"
-              size="small"
-              @change="saveSettings"
-            />
-          </div>
-          
-          <div class="settings-item">
-            <div class="settings-label">默认下载目录</div>
-            <div class="settings-input-group">
-              <el-input 
-                v-model="settings.defaultOutputDir" 
-                placeholder="每次下载时选择"
-                size="small"
-                readonly
-              />
-              <el-button size="small" @click="selectDefaultOutputDir">选择</el-button>
-              <el-button 
-                v-if="settings.defaultOutputDir"
-                size="small" 
-                type="danger" 
-                text
-                @click="settings.defaultOutputDir = ''; saveSettings()"
-              >清除</el-button>
-            </div>
-          </div>
-          
-          <div class="settings-item">
-            <div class="settings-label">默认清晰度</div>
-            <el-select 
-              v-model="settings.defaultQuality" 
-              placeholder="自动选择最高"
-              size="small"
-              clearable
-              @change="saveSettings"
-            >
-              <el-option label="自动选择最高" value="" />
-              <el-option label="4K (2160P)" value="2160" />
-              <el-option label="1080P 高清" value="1080" />
-              <el-option label="720P 高清" value="720" />
-              <el-option label="480P 标清" value="480" />
-              <el-option label="360P 流畅" value="360" />
-            </el-select>
-          </div>
-        </div>
-        
-        <!-- 高级设置 -->
-        <div class="settings-section">
-          <div class="settings-section-title">高级设置</div>
-          
-          <div class="settings-item">
-            <div class="settings-label">
-              多线程连接数
-              <span class="settings-hint">aria2c 下载连接数，越大下载越快但占用带宽越多</span>
-            </div>
-            <el-input-number 
-              v-model="settings.aria2cConnections" 
-              :min="1" 
-              :max="64"
-              size="small"
-              @change="saveSettings"
-            />
-          </div>
-          
-          <div class="settings-item">
-            <div class="settings-label">
-              视频编码偏好
-              <span class="settings-hint">AVC 兼容性最好，HEVC/AV1 文件更小但需要解码支持</span>
-            </div>
-            <el-select 
-              v-model="settings.preferCodec" 
-              placeholder="自动选择"
-              size="small"
-              clearable
-              @change="saveSettings"
-            >
-              <el-option label="自动选择" value="" />
-              <el-option label="AVC (H.264)" value="avc" />
-              <el-option label="HEVC (H.265)" value="hevc" />
-              <el-option label="AV1" value="av1" />
-            </el-select>
-          </div>
-          
-          <div class="settings-item">
-            <div class="settings-label">
-              失败自动重试次数
-              <span class="settings-hint">下载失败时自动重试的次数，设为 0 则不自动重试</span>
-            </div>
-            <el-input-number 
-              v-model="settings.maxRetryCount" 
-              :min="0" 
-              :max="10"
-              size="small"
-              @change="saveSettings"
-            />
-          </div>
-        </div>
-        
-        <!-- 关于 -->
-        <div class="settings-section">
-          <div class="settings-section-title">关于</div>
-          <div class="settings-about">
-            <p>哔哩哔哩下载器 v{{ currentVersion }}</p>
-            <p class="settings-about-desc">基于 Tauri + Vue 3 开发</p>
-            <p class="settings-about-link">
-              <el-button 
-                type="primary" 
-                link 
-                :loading="isCheckingUpdate"
-                @click="checkForUpdate(false)"
-              >
-                {{ isCheckingUpdate ? '检查中...' : '检查更新' }}
-              </el-button>
-              <span class="link-divider">|</span>
-              <span class="github-link" @click="openGitHub">GitHub</span>
-            </p>
-          </div>
-        </div>
-      </div>
+      <SettingsPanel />
     </el-drawer>
     
     <!-- 更新提示对话框 -->
-    <el-dialog
-      v-model="showUpdateDialog"
-      width="440px"
-      :close-on-click-modal="false"
-      :close-on-press-escape="!isDownloadingUpdate"
-      :show-close="!isDownloadingUpdate"
-      class="update-dialog"
-    >
-      <template #header>
-        <div class="update-dialog-header">
-          <div class="update-icon">🎉</div>
-          <div class="update-title">发现新版本</div>
-        </div>
-      </template>
-      
-      <div class="update-dialog-content">
-        <div class="update-version-box">
-          <div class="version-item current">
-            <span class="version-label">当前版本</span>
-            <span class="version-num">v{{ currentVersion }}</span>
-          </div>
-          <div class="version-arrow">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="version-item new">
-            <span class="version-label">最新版本</span>
-            <span class="version-num">v{{ updateInfo?.version }}</span>
-          </div>
-        </div>
-        
-        <div v-if="keyUpdates.length > 0" class="update-notes">
-          <div class="update-notes-header">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span>更新内容</span>
-          </div>
-          <ul class="update-notes-list">
-            <li v-for="(item, index) in keyUpdates" :key="index">{{ item }}</li>
-          </ul>
-        </div>
-        
-        <div v-if="isDownloadingUpdate" class="update-progress">
-          <div class="update-progress-header">
-            <span class="update-progress-text">正在下载更新...</span>
-            <span class="update-progress-percent">{{ updateDownloadProgress }}%</span>
-          </div>
-          <el-progress 
-            :percentage="updateDownloadProgress" 
-            :stroke-width="8"
-            :show-text="false"
-            color="#fb7299"
-          />
-          <div class="update-progress-hint">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
-              <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            下载完成后将自动启动安装程序
-          </div>
-        </div>
-      </div>
-      
-      <template #footer>
-        <div class="update-dialog-footer">
-          <template v-if="!isDownloadingUpdate">
-            <el-button class="btn-later" @click="showUpdateDialog = false">稍后再说</el-button>
-            <el-button class="btn-update" type="primary" @click="downloadAndInstallUpdate">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="margin-right: 6px;">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              {{ updateInfo?.downloadUrl ? '立即更新' : '前往下载' }}
-            </el-button>
-          </template>
-          <template v-else>
-            <el-button class="btn-downloading" disabled>
-              <span class="downloading-spinner"></span>
-              下载中...
-            </el-button>
-          </template>
-        </div>
-      </template>
-    </el-dialog>
+    <UpdateDialog v-model="appStore.showUpdateDialog" />
   </div>
 </template>
 
