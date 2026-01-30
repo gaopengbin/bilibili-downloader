@@ -1,0 +1,8 @@
+/**
+ * 样式入口文件
+ * 按顺序导入所有全局样式
+ */
+
+@import './variables.css';
+@import './reset.css';
+@import './element-plus.css';

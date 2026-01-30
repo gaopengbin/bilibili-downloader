@@ -1,0 +1,65 @@
+/**
+ * CSS 变量定义 - B站主题色
+ */
+
+:root {
+  /* Element Plus 主题色 - B站粉色 */
+  --el-color-primary: #fb7299;
+  --el-color-primary-light-3: #fc8bab;
+  --el-color-primary-light-5: #fda4bd;
+  --el-color-primary-light-7: #febdcf;
+  --el-color-primary-light-9: #fee8ef;
+  --el-color-primary-dark-2: #c95b7a;
+  --bili-pink: #fb7299;
+  
+  /* 统一色系 - 只使用粉黑白 */
+  --el-color-success: #fb7299;
+  --el-color-success-light-3: #fc8bab;
+  --el-color-success-light-5: #fda4bd;
+  --el-color-success-light-9: #fee8ef;
+  --el-color-warning: #fb7299;
+  --el-color-warning-light-3: #fc8bab;
+  --el-color-warning-light-5: #fda4bd;
+  --el-color-warning-light-9: #fee8ef;
+  --el-color-danger: #fb7299;
+  --el-color-danger-light-3: #fc8bab;
+  --el-color-danger-light-5: #fda4bd;
+  --el-color-danger-light-9: #fee8ef;
+  --el-color-info: #909399;
+  --el-color-info-light-3: #a6a9ad;
+  --el-color-info-light-5: #bcbec2;
+  --el-color-info-light-9: #e9e9eb;
+  
+  /* 主题变量 - 亮色 */
+  --bg-primary: #f4f5f7;
+  --bg-secondary: #f8f8f8;
+  --bg-card: #fff;
+  --bg-hover: #f4f5f7;
+  --bg-input: #f4f5f7;
+  --text-primary: #18191c;
+  --text-secondary: #61666d;
+  --text-muted: #9499a0;
+  --border-color: #e7e7e7;
+  --shadow-color: rgba(0,0,0,0.06);
+}
+
+/* 暗黑主题 */
+html.dark {
+  --bg-primary: #18191c;
+  --bg-secondary: #1f2022;
+  --bg-card: #242628;
+  --bg-hover: #2d2f31;
+  --bg-input: #2d2f31;
+  --text-primary: #e3e5e7;
+  --text-secondary: #a2a7ae;
+  --text-muted: #757a82;
+  --border-color: #3c3f41;
+  --shadow-color: rgba(0,0,0,0.3);
+  
+  /* 暗黑模式下的统一色系 */
+  --el-color-primary-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-success-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-warning-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-danger-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-info-light-9: rgba(144, 147, 153, 0.15);
+}
