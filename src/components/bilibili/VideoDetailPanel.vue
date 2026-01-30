@@ -7,6 +7,7 @@
     </div>
     
     <div v-else-if="videoInfo" class="video-detail-card">
+      <div class="detail-content">
       <div class="detail-cover">
         <el-image v-if="videoInfo.thumbnail" :src="videoInfo.thumbnail" fit="cover">
           <template #error>
@@ -161,6 +162,7 @@
           </div>
         </div>
       </div>
+      </div>
       
       <!-- 下载区域 -->
       <div class="download-section">
@@ -258,6 +260,9 @@ defineEmits<{
 .video-detail-panel {
   height: 100%;
   overflow-y: auto;
+  background: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow-color);
 }
 
 .loading-card {
@@ -275,7 +280,18 @@ defineEmits<{
 }
 
 .video-detail-card {
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.detail-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px;
+  padding-bottom: 5px;
 }
 
 .detail-cover {
@@ -304,13 +320,17 @@ defineEmits<{
 
 .detail-info {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .detail-title {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   line-height: 1.4;
 }
 
@@ -370,7 +390,12 @@ defineEmits<{
 
 /* 分P选择 */
 .episode-section {
-  margin-top: 16px;
+  margin-top: 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .episode-header {
@@ -380,6 +405,7 @@ defineEmits<{
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 500;
+  color: var(--text-primary);
 }
 
 .select-count {
@@ -389,7 +415,8 @@ defineEmits<{
 }
 
 .episode-list {
-  max-height: 300px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -433,7 +460,12 @@ defineEmits<{
 
 /* 合集样式 */
 .season-section {
-  margin-top: 16px;
+  margin-top: 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .season-header {
@@ -450,7 +482,8 @@ defineEmits<{
 }
 
 .season-list {
-  max-height: 400px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -581,9 +614,10 @@ defineEmits<{
 
 /* 下载区域 */
 .download-section {
+  flex-shrink: 0;
   padding: 16px 20px;
   border-top: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  background: var(--bg-card);
 }
 
 .output-dir {

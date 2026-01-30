@@ -1525,6 +1525,39 @@ html.dark .el-dropdown-menu__item:hover {
   background-color: var(--bg-hover);
 }
 
+/* Select 下拉菜单暗色主题 */
+html.dark .el-select-dropdown {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+html.dark .el-select-dropdown__item {
+  color: var(--text-primary) !important;
+}
+
+html.dark .el-select-dropdown__item.hover,
+html.dark .el-select-dropdown__item:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+html.dark .el-select-dropdown__item.selected,
+html.dark .el-select-dropdown__item.is-selected {
+  color: #fb7299 !important;
+  background-color: rgba(251, 114, 153, 0.1) !important;
+}
+
+html.dark .el-popper.is-light,
+html.dark .el-popper.is-pure {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+html.dark .el-popper.is-light .el-popper__arrow::before,
+html.dark .el-popper.is-pure .el-popper__arrow::before {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
 html.dark .el-skeleton__item {
   background: var(--bg-hover);
 }
