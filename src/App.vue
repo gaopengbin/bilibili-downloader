@@ -256,7 +256,7 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.5.0';
+const currentVersion = '0.6.0';
 
 // 检查更新
 const checkForUpdate = async (silent = false) => {
@@ -3644,38 +3644,85 @@ async function loadMoreFavorites() {
     <!-- 更新提示对话框 -->
     <el-dialog
       v-model="showUpdateDialog"
-      title="发现新版本"
-      width="420px"
+      width="440px"
       :close-on-click-modal="false"
       :close-on-press-escape="!isDownloadingUpdate"
       :show-close="!isDownloadingUpdate"
+      class="update-dialog"
     >
-      <div class="update-dialog-content">
-        <div class="update-version">
-          <span class="old-version">v{{ currentVersion }}</span>
-          <span class="version-arrow">→</span>
-          <span class="new-version">v{{ updateInfo?.version }}</span>
+      <template #header>
+        <div class="update-dialog-header">
+          <div class="update-icon">🎉</div>
+          <div class="update-title">发现新版本</div>
         </div>
+      </template>
+      
+      <div class="update-dialog-content">
+        <div class="update-version-box">
+          <div class="version-item current">
+            <span class="version-label">当前版本</span>
+            <span class="version-num">v{{ currentVersion }}</span>
+          </div>
+          <div class="version-arrow">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="version-item new">
+            <span class="version-label">最新版本</span>
+            <span class="version-num">v{{ updateInfo?.version }}</span>
+          </div>
+        </div>
+        
         <div v-if="updateInfo?.body" class="update-notes">
-          <div class="update-notes-title">更新内容：</div>
+          <div class="update-notes-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>更新内容</span>
+          </div>
           <div class="update-notes-content">{{ updateInfo.body }}</div>
         </div>
+        
         <div v-if="isDownloadingUpdate" class="update-progress">
-          <div class="update-progress-text">正在下载更新...</div>
-          <el-progress :percentage="updateDownloadProgress" :stroke-width="10" />
-          <div class="update-progress-hint">下载完成后将自动启动安装程序</div>
+          <div class="update-progress-header">
+            <span class="update-progress-text">正在下载更新...</span>
+            <span class="update-progress-percent">{{ updateDownloadProgress }}%</span>
+          </div>
+          <el-progress 
+            :percentage="updateDownloadProgress" 
+            :stroke-width="8"
+            :show-text="false"
+            color="#fb7299"
+          />
+          <div class="update-progress-hint">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            下载完成后将自动启动安装程序
+          </div>
         </div>
       </div>
+      
       <template #footer>
-        <template v-if="!isDownloadingUpdate">
-          <el-button @click="showUpdateDialog = false">稍后再说</el-button>
-          <el-button type="primary" @click="downloadAndInstallUpdate">
-            {{ updateInfo?.downloadUrl ? '立即更新' : '前往下载' }}
-          </el-button>
-        </template>
-        <template v-else>
-          <el-button disabled>下载中...</el-button>
-        </template>
+        <div class="update-dialog-footer">
+          <template v-if="!isDownloadingUpdate">
+            <el-button class="btn-later" @click="showUpdateDialog = false">稍后再说</el-button>
+            <el-button class="btn-update" type="primary" @click="downloadAndInstallUpdate">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="margin-right: 6px;">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              {{ updateInfo?.downloadUrl ? '立即更新' : '前往下载' }}
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button class="btn-downloading" disabled>
+              <span class="downloading-spinner"></span>
+              下载中...
+            </el-button>
+          </template>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -3738,12 +3785,31 @@ html.dark * {
   --el-color-primary-light-3: #fc8bab;
   --el-color-primary-light-5: #fda4bd;
   --el-color-primary-light-7: #febdcf;
-  --el-color-primary-light-9: #fed6e1;
+  --el-color-primary-light-9: #fee8ef;
   --el-color-primary-dark-2: #c95b7a;
   --bili-pink: #fb7299;
   
+  /* 统一色系 - 只使用粉黑白 */
+  --el-color-success: #fb7299;
+  --el-color-success-light-3: #fc8bab;
+  --el-color-success-light-5: #fda4bd;
+  --el-color-success-light-9: #fee8ef;
+  --el-color-warning: #fb7299;
+  --el-color-warning-light-3: #fc8bab;
+  --el-color-warning-light-5: #fda4bd;
+  --el-color-warning-light-9: #fee8ef;
+  --el-color-danger: #fb7299;
+  --el-color-danger-light-3: #fc8bab;
+  --el-color-danger-light-5: #fda4bd;
+  --el-color-danger-light-9: #fee8ef;
+  --el-color-info: #909399;
+  --el-color-info-light-3: #a6a9ad;
+  --el-color-info-light-5: #bcbec2;
+  --el-color-info-light-9: #e9e9eb;
+  
   /* 主题变量 - 亮色 */
   --bg-primary: #f4f5f7;
+  --bg-secondary: #f8f8f8;
   --bg-card: #fff;
   --bg-hover: #f4f5f7;
   --bg-input: #f4f5f7;
@@ -3757,6 +3823,7 @@ html.dark * {
 /* 暗黑主题 */
 html.dark {
   --bg-primary: #18191c;
+  --bg-secondary: #1f2022;
   --bg-card: #242628;
   --bg-hover: #2d2f31;
   --bg-input: #2d2f31;
@@ -3765,6 +3832,13 @@ html.dark {
   --text-muted: #757a82;
   --border-color: #3c3f41;
   --shadow-color: rgba(0,0,0,0.3);
+  
+  /* 暗黑模式下的统一色系 */
+  --el-color-primary-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-success-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-warning-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-danger-light-9: rgba(251, 114, 153, 0.15);
+  --el-color-info-light-9: rgba(144, 147, 153, 0.15);
 }
 
 html.dark .el-input__wrapper,
@@ -3866,6 +3940,96 @@ html.dark .el-radio-button__inner {
 .el-checkbox__input.is-checked .el-checkbox__inner {
   background-color: #fb7299;
   border-color: #fb7299;
+}
+
+/* 统一消息提示颜色 */
+.el-message--success {
+  --el-message-bg-color: #fee8ef;
+  --el-message-border-color: #fda4bd;
+  --el-message-text-color: #c95b7a;
+}
+
+.el-message--success .el-message__icon {
+  color: #fb7299;
+}
+
+.el-message--warning {
+  --el-message-bg-color: #fee8ef;
+  --el-message-border-color: #fda4bd;
+  --el-message-text-color: #c95b7a;
+}
+
+.el-message--warning .el-message__icon {
+  color: #fb7299;
+}
+
+.el-message--error {
+  --el-message-bg-color: #2d2d2d;
+  --el-message-border-color: #4a4a4a;
+  --el-message-text-color: #e3e5e7;
+}
+
+html.dark .el-message--success,
+html.dark .el-message--warning {
+  --el-message-bg-color: rgba(251, 114, 153, 0.15);
+  --el-message-border-color: rgba(251, 114, 153, 0.3);
+  --el-message-text-color: #fc8bab;
+}
+
+html.dark .el-message--error {
+  --el-message-bg-color: rgba(50, 50, 50, 0.95);
+  --el-message-border-color: rgba(80, 80, 80, 0.5);
+  --el-message-text-color: #e3e5e7;
+}
+
+/* 统一消息框颜色 */
+.el-message-box__btns .el-button--primary {
+  background-color: #fb7299;
+  border-color: #fb7299;
+}
+
+.el-message-box__btns .el-button--primary:hover {
+  background-color: #fc8bab;
+  border-color: #fc8bab;
+}
+
+/* 统一对话框样式 */
+.el-dialog {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.el-dialog__header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.el-dialog__title {
+  font-weight: 600;
+}
+
+/* 输入框聚焦颜色 */
+.el-input__wrapper:focus-within {
+  box-shadow: 0 0 0 1px #fb7299 inset !important;
+}
+
+.el-select__wrapper:focus-within {
+  box-shadow: 0 0 0 1px #fb7299 inset !important;
+}
+
+/* 开关按钮颜色 */
+.el-switch.is-checked .el-switch__core {
+  background-color: #fb7299;
+  border-color: #fb7299;
+}
+
+/* 加载动画颜色 */
+.el-loading-spinner .circular {
+  stroke: #fb7299;
+}
+
+.el-loading-spinner .el-loading-text {
+  color: #fb7299;
 }
 </style>
 
@@ -4910,72 +5074,231 @@ html.dark .el-radio-button__inner {
 }
 
 /* 更新对话框 */
-.update-dialog-content {
-  padding: 10px 0;
+.update-dialog .el-dialog__header {
+  padding: 0;
+  margin: 0;
 }
 
-.update-version {
+.update-dialog .el-dialog__body {
+  padding: 0 24px 20px;
+}
+
+.update-dialog .el-dialog__footer {
+  padding: 0 24px 24px;
+}
+
+.update-dialog-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 24px 20px;
+  background: linear-gradient(135deg, #fb7299 0%, #fc8bab 100%);
+  border-radius: 8px 8px 0 0;
+  margin: -20px -20px 0;
+}
+
+.update-dialog-header .update-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+  animation: bounce 1s ease infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.update-dialog-header .update-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.update-dialog-content {
+  padding: 24px 0 0;
+}
+
+.update-version-box {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  font-size: 18px;
-  margin-bottom: 20px;
+  gap: 20px;
+  margin-bottom: 24px;
 }
 
-.update-version .old-version {
+.version-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 24px;
+  border-radius: 12px;
+  min-width: 120px;
+}
+
+.version-item.current {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.version-item.new {
+  background: linear-gradient(135deg, rgba(251, 114, 153, 0.1) 0%, rgba(252, 139, 171, 0.1) 100%);
+  border: 1px solid #fb7299;
+}
+
+.version-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.version-item.current .version-num {
+  font-size: 18px;
+  font-weight: 600;
   color: var(--text-secondary);
 }
 
-.update-version .version-arrow {
-  color: var(--el-color-primary);
-  font-weight: bold;
+.version-item.new .version-num {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fb7299;
 }
 
-.update-version .new-version {
-  color: var(--el-color-primary);
-  font-weight: bold;
+.version-arrow {
+  color: #fb7299;
+  display: flex;
+  align-items: center;
 }
 
 .update-notes {
   background: var(--bg-secondary);
-  border-radius: 8px;
-  padding: 12px;
-  max-height: 200px;
+  border-radius: 12px;
+  padding: 16px;
+  max-height: 180px;
   overflow-y: auto;
+  border: 1px solid var(--border-color);
 }
 
-.update-notes-title {
+.update-notes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
   font-weight: 500;
-  margin-bottom: 8px;
   color: var(--text-primary);
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.update-notes-header svg {
+  color: #fb7299;
 }
 
 .update-notes-content {
   font-size: 13px;
   color: var(--text-secondary);
   white-space: pre-wrap;
-  line-height: 1.6;
+  line-height: 1.8;
 }
 
 .update-progress {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-color);
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.update-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .update-progress-text {
   font-size: 14px;
   color: var(--text-primary);
-  margin-bottom: 12px;
-  text-align: center;
+  font-weight: 500;
+}
+
+.update-progress-percent {
+  font-size: 14px;
+  color: #fb7299;
+  font-weight: 600;
 }
 
 .update-progress-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--text-secondary);
-  margin-top: 8px;
-  text-align: center;
+  margin-top: 12px;
+}
+
+.update-progress-hint svg {
+  color: var(--text-muted);
+}
+
+.update-dialog-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.update-dialog-footer .btn-later {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: 8px;
+}
+
+.update-dialog-footer .btn-later:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.update-dialog-footer .btn-update {
+  background: linear-gradient(135deg, #fb7299 0%, #fc8bab 100%);
+  border: none;
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.update-dialog-footer .btn-update:hover {
+  background: linear-gradient(135deg, #e8688a 0%, #fb7299 100%);
+}
+
+.update-dialog-footer .btn-downloading {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-muted);
+  padding: 10px 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.downloading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: #fb7299;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 下载中心 */
