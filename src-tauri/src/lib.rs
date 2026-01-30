@@ -1589,6 +1589,11 @@ async fn download_video(
         "--newline".to_string(),
         // 断点续传支持
         "--continue".to_string(),
+        // 编码设置 - 设置响应解码编码
+        "--encoding".to_string(),
+        "utf-8".to_string(),
+        // 忽略错误继续下载
+        "--ignore-errors".to_string(),
         // 使用 aria2c 作为外部下载器，支持多线程下载
         "--external-downloader".to_string(),
         aria2c_path.to_string_lossy().to_string(),
@@ -1605,6 +1610,7 @@ async fn download_video(
         "ffmpeg:-y".to_string(), // 强制覆盖，避免合并失败
         "--no-check-certificate".to_string(),
         "--windows-filenames".to_string(),
+        "--restrict-filenames".to_string(), // 限制文件名只包含ASCII字符
         "--ffmpeg-location".to_string(),
         ffmpeg_path.to_string_lossy().to_string(),
         // 添加请求头解决412错误
@@ -1699,8 +1705,12 @@ async fn download_video(
         .env_remove("https_proxy")
         .env_remove("ALL_PROXY")
         .env_remove("all_proxy")
-        .env("PYTHONIOENCODING", "utf-8")
+        // Python UTF-8 模式
+        .env("PYTHONIOENCODING", "utf-8:replace")  // 遇到无法编码的字符用替换而非报错
         .env("PYTHONUTF8", "1")
+        .env("PYTHONLEGACYWINDOWSSTDIO", "0")  // 禁用 Windows 传统 stdio
+        .env("LANG", "en_US.UTF-8")
+        .env("LC_ALL", "en_US.UTF-8")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .creation_flags(0x08000000) // CREATE_NO_WINDOW

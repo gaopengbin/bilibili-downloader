@@ -258,7 +258,7 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.8.0';
+const currentVersion = '0.9.0';
 
 // 渲染更新日志的 Markdown
 const renderedUpdateBody = computed(() => {

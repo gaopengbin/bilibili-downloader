@@ -7,6 +7,13 @@
 
 ## 更新内容
 
+### v0.9.0 🔧
+
+- 🐛 **修复编码问题**：解决 Windows 下未登录时下载视频报错 "Invalid argument" 的问题
+- 🌐 优化 Python/yt-dlp 的 UTF-8 编码设置，避免 GBK 编码冲突
+- 🔒 添加 `--restrict-filenames` 参数限制文件名只包含 ASCII 字符
+- 🛡️ 添加 `--ignore-errors` 参数提高下载容错性
+
 ### v0.8.0 📝
 
 - ✨ **Markdown 渲染**：更新弹框中的更新日志现在支持 Markdown 格式显示
