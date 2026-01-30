@@ -8,17 +8,19 @@ import { open } from '@tauri-apps/plugin-dialog';
 // import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { 
-  Search, Download, FolderOpened, VideoPlay, VideoPause, Clock, Star,
-  User, Link, Close, Refresh, CaretRight, Sunny, Moon, RefreshRight,
-  Folder, Setting
+  Search, Download, FolderOpened, VideoPlay, Clock, Star,
+  User, Link, Close, Refresh, CaretRight, Sunny, Moon,
+  Setting
 } from '@element-plus/icons-vue';
 
 // 引入新拆分的组件
-import { SettingsPanel, UpdateDialog } from '@/components';
-import { useAppStore } from '@/stores';
+import { SettingsPanel, UpdateDialog, DownloadCenter } from '@/components';
+import { HistoryPanel, FavoritesPanel, SearchResultPanel } from '@/components/bilibili';
+import { useAppStore, useUserStore } from '@/stores';
 
 // 初始化 store
 const appStore = useAppStore();
+const userStore = useUserStore();
 
 // ==================== 类型定义 ====================
 
@@ -225,7 +227,7 @@ const searchResults = ref<SearchResultItem[]>([]);
 const searchPage = ref(1);
 const searchHasMore = ref(false);
 const searchTotal = ref(0);
-const searchType = ref('video'); // video, media_bangumi, media_ft, live, article, bili_user
+const searchType = ref<'video' | 'media_bangumi' | 'media_ft'>('video');
 
 const historyList = ref<HistoryItem[]>([]);
 const historyLoading = ref(false);
@@ -287,13 +289,6 @@ const descExpanded = ref(false);
 
 // ==================== 计算属性 ====================
 
-const formatPlayCount = (count: number): string => {
-  if (count >= 10000) {
-    return (count / 10000).toFixed(1) + '万';
-  }
-  return count.toString();
-};
-
 // 检查是否是当前视频（用于合集列表高亮）
 const isCurrentVideo = (bvid: string): boolean => {
   if (!videoUrl.value) return false;
@@ -303,15 +298,6 @@ const isCurrentVideo = (bvid: string): boolean => {
 // 顶级任务（不包含子任务，组任务或单独任务）
 const topLevelTasks = computed(() => 
   downloadTasks.value.filter(t => !t.groupId)
-);
-
-// 活动任务（下载中 + 等待中 + 暂停）- 仅显示顶级任务
-const activeTasks = computed(() => 
-  topLevelTasks.value.filter(t => 
-    t.status === 'downloading' || 
-    t.status === 'waiting' || 
-    t.status === 'paused'
-  )
 );
 
 // 已完成任务 - 仅显示顶级任务
@@ -340,9 +326,9 @@ function toggleGroupExpand(groupId: string) {
 }
 
 const searchTypes = [
-  { label: '视频', value: 'video' },
-  { label: '番剧', value: 'media_bangumi' },
-  { label: '影视', value: 'media_ft' },
+  { label: '视频', value: 'video' as const },
+  { label: '番剧', value: 'media_bangumi' as const },
+  { label: '影视', value: 'media_ft' as const },
 ];
 
 // ==================== 生命周期 ====================
@@ -554,6 +540,7 @@ async function checkLoginStatus() {
     const result = await invoke<ApiResponse<UserInfo>>('check_login_status');
     if (result.success && result.data) {
       userInfo.value = result.data;
+      userStore.setUserInfo(result.data as any); // 同步到 store
     }
   } catch (error) {
     console.error('检查登录状态失败', error);
@@ -623,6 +610,7 @@ async function handleLogout() {
     historyList.value = [];
     favoriteList.value = [];
     favoriteFolders.value = [];
+    userStore.clearUserInfo(); // 同步到 store
     ElMessage.success('已退出登录');
   } catch (error) {
     ElMessage.error(`退出失败: ${error}`);
@@ -2108,19 +2096,6 @@ function formatDuration(seconds: number | null): string {
   return `${min}:${sec.toString().padStart(2, '0')}`;
 }
 
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp * 1000);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  
-  if (diff < 60 * 1000) return '刚刚';
-  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60 / 1000)}分钟前`;
-  if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / 60 / 60 / 1000)}小时前`;
-  if (diff < 7 * 24 * 60 * 60 * 1000) return `${Math.floor(diff / 24 / 60 / 60 / 1000)}天前`;
-  
-  return `${date.getMonth() + 1}-${date.getDate()}`;
-}
-
 // ==================== 历史记录 ====================
 
 async function loadHistory(refresh = false) {
@@ -2372,55 +2347,16 @@ async function loadMoreFavorites() {
             </span>
           </div>
           
-          <div v-if="searchResults.length > 0" class="search-results">
-            <div class="result-header">
-              <span>找到 {{ searchTotal }} 个结果</span>
-            </div>
-            <!-- 番剧/影视用栅格布局 -->
-            <div v-if="searchType === 'media_bangumi' || searchType === 'media_ft'" class="media-grid">
-              <div 
-                v-for="item in searchResults" 
-                :key="item.bvid"
-                class="media-card"
-                @click="selectFromList(item.bvid, item.cover)"
-              >
-                <div class="media-cover">
-                  <el-image v-if="item.cover" :src="item.cover" fit="cover" />
-                </div>
-                <div class="media-title">{{ item.title }}</div>
-              </div>
-            </div>
-            <!-- 视频用列表布局 -->
-            <div v-else class="video-list">
-              <div 
-                v-for="item in searchResults" 
-                :key="item.bvid"
-                class="video-item"
-                @click="selectFromList(item.bvid, item.cover)"
-              >
-                <div class="video-cover">
-                  <el-image v-if="item.cover" :src="item.cover" fit="cover" />
-                  <span class="duration-tag">{{ item.duration }}</span>
-                </div>
-                <div class="video-meta">
-                  <div class="video-title">{{ item.title }}</div>
-                  <div class="video-info-row">
-                    <span class="author">{{ item.author }}</span>
-                    <span class="stats">
-                      <el-icon><CaretRight /></el-icon>{{ formatPlayCount(item.play) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-if="searchHasMore" class="load-more">
-              <el-button text :loading="searchLoading" @click="loadMoreSearch">加载更多</el-button>
-            </div>
-          </div>
-          <div v-else-if="!searchLoading && searchKeyword" class="empty-state">
-            <el-icon :size="48"><Search /></el-icon>
-            <p>暂无搜索结果</p>
-          </div>
+          <SearchResultPanel
+            :keyword="searchKeyword"
+            :results="searchResults"
+            :total="searchTotal"
+            :loading="searchLoading"
+            :has-more="searchHasMore"
+            :search-type="searchType"
+            @select="selectFromList"
+            @load-more="loadMoreSearch"
+          />
         </div>
 
         <!-- 链接输入 -->
@@ -2458,96 +2394,29 @@ async function loadMoreFavorites() {
 
         <!-- 历史记录 -->
         <div v-show="activeTab === 'history'" class="tab-pane">
-          <div v-if="!userInfo" class="not-login">
-            <el-icon :size="48"><User /></el-icon>
-            <p>登录后查看历史记录</p>
-            <el-button type="primary" @click="openLoginDialog">立即登录</el-button>
-          </div>
-          <div v-else-if="historyLoading && historyList.length === 0" class="loading-state">
-            <el-skeleton :rows="4" animated />
-          </div>
-          <div v-else class="video-list">
-            <div 
-              v-for="item in historyList" 
-              :key="item.bvid"
-              class="video-item"
-              @click="selectFromList(item.bvid, item.cover)"
-            >
-              <div class="video-cover">
-                <el-image v-if="item.cover" :src="item.cover" fit="cover" />
-                <span class="duration-tag">{{ formatDuration(item.duration) }}</span>
-                <div v-if="item.progress > 0" class="watch-progress">
-                  <div 
-                    class="progress-inner" 
-                    :style="{ width: Math.min(100, item.progress / item.duration * 100) + '%' }"
-                  ></div>
-                </div>
-              </div>
-              <div class="video-meta">
-                <div class="video-title">{{ item.title }}</div>
-                <div class="video-info-row">
-                  <span class="author">{{ item.author }}</span>
-                  <span class="time">{{ formatTime(item.view_at) }}</span>
-                </div>
-              </div>
-            </div>
-            <div v-if="historyList.length === 0" class="empty-state">暂无历史记录</div>
-            <div v-if="historyHasMore" class="load-more">
-              <el-button text :loading="historyLoading" @click="loadMoreHistory">加载更多</el-button>
-            </div>
-          </div>
+          <HistoryPanel
+            :history-list="historyList"
+            :loading="historyLoading"
+            :has-more="historyHasMore"
+            @select="selectFromList"
+            @load-more="loadMoreHistory"
+            @login="openLoginDialog"
+          />
         </div>
 
         <!-- 收藏夹 -->
         <div v-show="activeTab === 'favorites'" class="tab-pane">
-          <div v-if="!userInfo" class="not-login">
-            <el-icon :size="48"><Star /></el-icon>
-            <p>登录后查看收藏</p>
-            <el-button type="primary" @click="openLoginDialog">立即登录</el-button>
-          </div>
-          <div v-else>
-            <el-select 
-              v-if="favoriteFolders.length > 0"
-              v-model="selectedFolder"
-              class="folder-select"
-              @change="onFolderChange"
-            >
-              <el-option
-                v-for="folder in favoriteFolders"
-                :key="folder.id"
-                :label="`${folder.title} (${folder.media_count})`"
-                :value="folder.id"
-              />
-            </el-select>
-            
-            <div v-if="favoriteLoading && favoriteList.length === 0" class="loading-state">
-              <el-skeleton :rows="4" animated />
-            </div>
-            <div v-else class="video-list">
-              <div 
-                v-for="item in favoriteList" 
-                :key="item.bvid"
-                class="video-item"
-                @click="selectFromList(item.bvid, item.cover)"
-              >
-                <div class="video-cover">
-                  <el-image v-if="item.cover" :src="item.cover" fit="cover" />
-                  <span class="duration-tag">{{ formatDuration(item.duration) }}</span>
-                </div>
-                <div class="video-meta">
-                  <div class="video-title">{{ item.title }}</div>
-                  <div class="video-info-row">
-                    <span class="author">{{ item.author }}</span>
-                    <span class="time">{{ formatTime(item.fav_time) }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="favoriteList.length === 0" class="empty-state">收藏夹为空</div>
-              <div v-if="favoriteHasMore" class="load-more">
-                <el-button text :loading="favoriteLoading" @click="loadMoreFavorites">加载更多</el-button>
-              </div>
-            </div>
-          </div>
+          <FavoritesPanel
+            :folders="favoriteFolders"
+            :selected-folder="selectedFolder"
+            :favorite-list="favoriteList"
+            :loading="favoriteLoading"
+            :has-more="favoriteHasMore"
+            @select="selectFromList"
+            @folder-change="onFolderChange"
+            @load-more="loadMoreFavorites"
+            @login="openLoginDialog"
+          />
         </div>
       </div>
       </div>
@@ -2803,599 +2672,31 @@ async function loadMoreFavorites() {
       direction="rtl"
       size="420px"
     >
-      <div class="download-center">
-        <div v-if="downloadTasks.length === 0" class="empty-tasks">
-          <el-icon :size="48"><Download /></el-icon>
-          <p>暂无下载任务</p>
-        </div>
-        <template v-else>
-          <!-- 全局操作按钮 -->
-          <div class="download-actions">
-            <template v-if="!isSelectMode">
-              <el-button 
-                size="small" 
-                :disabled="activeTasks.length === 0"
-                @click="pauseAllTasks"
-              >
-                <el-icon><VideoPause /></el-icon>
-                全部暂停
-              </el-button>
-              <el-button 
-                size="small" 
-                type="primary"
-                :disabled="downloadTasks.filter(t => t.status === 'paused').length === 0"
-                @click="resumeAllTasks"
-              >
-                <el-icon><VideoPlay /></el-icon>
-                全部开始
-              </el-button>
-              <el-button 
-                size="small" 
-                @click="toggleSelectMode"
-              >
-                批量管理
-              </el-button>
-            </template>
-            <template v-else>
-              <el-button size="small" @click="toggleSelectAllActive">
-                {{ selectedTaskIds.length === topLevelTasks.length ? '取消全选' : '全选' }}
-              </el-button>
-              <el-button 
-                size="small" 
-                type="danger"
-                :disabled="selectedTaskIds.length === 0"
-                @click="confirmDeleteSelected"
-              >
-                删除 ({{ selectedTaskIds.length }})
-              </el-button>
-              <el-button size="small" @click="toggleSelectMode">
-                完成
-              </el-button>
-            </template>
-          </div>
-          
-          <!-- 下载中/等待中 -->
-          <div v-if="activeTasks.length > 0" class="task-section">
-            <div class="section-title">下载中 ({{ activeTasks.filter(t => !t.isGroup).length + activeTasks.filter(t => t.isGroup).reduce((sum, g) => sum + (g.totalCount || 0), 0) }})</div>
-            <div class="task-list">
-              <template v-for="task in activeTasks" :key="task.id">
-                <!-- 组任务 -->
-                <div v-if="task.isGroup" class="task-group">
-                  <div 
-                    class="task-item task-group-header"
-                    :class="{ 
-                      'task-downloading': task.status === 'downloading',
-                      'task-waiting': task.status === 'waiting',
-                      'task-selected': isSelectMode && selectedTaskIds.includes(task.id)
-                    }"
-                    @click="isSelectMode ? toggleTaskSelect(task.id) : toggleGroupExpand(task.id)"
-                  >
-                    <el-checkbox 
-                      v-if="isSelectMode"
-                      :model-value="selectedTaskIds.includes(task.id)"
-                      @click.stop
-                      @change="toggleTaskSelect(task.id)"
-                      class="task-checkbox"
-                    />
-                    <div class="task-cover">
-                      <el-image v-if="task.cover" :src="task.cover" fit="cover" />
-                      <div v-else class="task-cover-placeholder">
-                        <el-icon><Folder /></el-icon>
-                      </div>
-                      <div class="task-type-badge">合集</div>
-                    </div>
-                    <div class="task-info">
-                      <div class="task-title">{{ task.title }}</div>
-                      <div class="task-group-progress">
-                        <span class="group-progress-text">{{ task.completedCount }}/{{ task.totalCount }}</span>
-                        <span class="group-progress-label">已完成</span>
-                        <span v-if="task.failedCount && task.failedCount > 0" class="group-failed-text">
-                          {{ task.failedCount }} 个失败
-                        </span>
-                      </div>
-                    </div>
-                    <div class="task-actions">
-                      <el-button 
-                        v-if="task.status === 'downloading'" 
-                        type="warning" 
-                        size="small" 
-                        circle
-                        @click.stop="pauseGroupDownload(task)"
-                        title="暂停全部"
-                      >
-                        <el-icon><VideoPause /></el-icon>
-                      </el-button>
-                      <el-button 
-                        v-else-if="task.status === 'paused'" 
-                        type="primary" 
-                        size="small" 
-                        circle
-                        @click.stop="resumeGroupDownload(task)"
-                        title="继续下载"
-                      >
-                        <el-icon><VideoPlay /></el-icon>
-                      </el-button>
-                      <el-button 
-                        v-if="task.failedCount && task.failedCount > 0"
-                        type="warning" 
-                        size="small" 
-                        circle
-                        @click.stop="retryFailedChildren(task)"
-                        title="重试失败"
-                      >
-                        <el-icon><RefreshRight /></el-icon>
-                      </el-button>
-                      <el-button 
-                        type="danger" 
-                        size="small" 
-                        circle
-                        @click.stop="deleteGroupTask(task)"
-                        title="删除"
-                      >
-                        <el-icon><Close /></el-icon>
-                      </el-button>
-                    </div>
-                  </div>
-                  <!-- 子任务列表 -->
-                  <div v-if="expandedGroupIds.includes(task.id)" class="task-children">
-                    <div 
-                      v-for="child in getChildTasks(task.id)" 
-                      :key="child.id" 
-                      class="task-item task-child"
-                      :class="{ 
-                        'task-downloading': child.status === 'downloading',
-                        'task-completed': child.status === 'completed',
-                        'task-failed': child.status === 'failed'
-                      }"
-                    >
-                      <div class="task-info">
-                        <div class="task-title">{{ child.title }}</div>
-                        <div v-if="child.status === 'downloading'" class="task-progress">
-                          <div class="task-progress-header">
-                            <span class="task-stage">{{ child.stage }}</span>
-                            <span class="task-size-speed">
-                              <span v-if="child.downloaded && child.totalSize" class="task-size">{{ child.downloaded }} / {{ child.totalSize }}</span>
-                              <span v-if="child.speed" class="task-speed">{{ child.speed }}</span>
-                            </span>
-                          </div>
-                          <el-progress 
-                            :percentage="Math.round(child.progress)" 
-                            :stroke-width="4"
-                            :show-text="false"
-                          />
-                        </div>
-                        <div v-else-if="child.status === 'completed'" class="task-status-text completed">
-                          ✓ 已完成
-                        </div>
-                        <div v-else-if="child.status === 'failed'" class="task-status-text failed">
-                          ✗ {{ child.error || '下载失败' }}
-                        </div>
-                        <div v-else-if="child.status === 'waiting'" class="task-status-text waiting">
-                          等待中...
-                        </div>
-                        <div v-else-if="child.status === 'paused'" class="task-status-text paused">
-                          已暂停
-                        </div>
-                      </div>
-                      <!-- 子任务操作按钮 -->
-                      <div class="task-child-actions">
-                        <el-button 
-                          v-if="child.status === 'failed' || child.status === 'paused'"
-                          type="primary" 
-                          size="small" 
-                          circle
-                          @click.stop="retryChildTask(child)"
-                          title="重试"
-                        >
-                          <el-icon><RefreshRight /></el-icon>
-                        </el-button>
-                        <el-button 
-                          v-if="child.status !== 'downloading'"
-                          type="danger" 
-                          size="small" 
-                          circle
-                          @click.stop="deleteChildTask(task.id, child.id)"
-                          title="删除"
-                        >
-                          <el-icon><Close /></el-icon>
-                        </el-button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <!-- 普通任务 -->
-                <div 
-                  v-else
-                  class="task-item"
-                  :class="{ 
-                    'task-downloading': task.status === 'downloading',
-                    'task-waiting': task.status === 'waiting',
-                    'task-selected': isSelectMode && selectedTaskIds.includes(task.id)
-                  }"
-                  @click="isSelectMode && toggleTaskSelect(task.id)"
-                >
-                  <el-checkbox 
-                    v-if="isSelectMode"
-                    :model-value="selectedTaskIds.includes(task.id)"
-                    @click.stop
-                    @change="toggleTaskSelect(task.id)"
-                    class="task-checkbox"
-                  />
-                  <div class="task-cover">
-                    <el-image v-if="task.cover" :src="task.cover" fit="cover" />
-                    <div v-else class="task-cover-placeholder">
-                      <el-icon><VideoPlay /></el-icon>
-                    </div>
-                    <div v-if="task.status === 'downloading'" class="task-status-badge downloading">
-                      <el-icon class="is-loading"><Refresh /></el-icon>
-                    </div>
-                    <div v-else-if="task.status === 'waiting'" class="task-status-badge waiting">
-                      •••
-                    </div>
-                    <div v-else-if="task.status === 'paused'" class="task-status-badge paused">
-                      ⏸
-                    </div>
-                  </div>
-                  <div class="task-info">
-                    <div class="task-title">{{ task.title }}</div>
-                    <div v-if="task.status === 'downloading'" class="task-progress">
-                      <div class="task-progress-header">
-                        <span class="task-stage">{{ task.stage }}</span>
-                        <span class="task-size-speed">
-                          <span v-if="task.downloaded && task.totalSize" class="task-size">{{ task.downloaded }} / {{ task.totalSize }}</span>
-                          <span v-if="task.speed" class="task-speed">{{ task.speed }}</span>
-                        </span>
-                      </div>
-                      <el-progress 
-                        :percentage="Math.round(task.progress)" 
-                        :stroke-width="6"
-                        :show-text="false"
-                      />
-                      <span class="task-percent">{{ Math.round(task.progress) }}%</span>
-                    </div>
-                    <div v-else-if="task.status === 'waiting'" class="task-status-text waiting">
-                      等待中...
-                    </div>
-                    <div v-else-if="task.status === 'paused'" class="task-status-text paused">
-                      已暂停
-                    </div>
-                  </div>
-                  <div class="task-actions">
-                    <el-button 
-                      v-if="task.status === 'downloading'" 
-                      type="warning" 
-                      size="small" 
-                      circle
-                      @click.stop="pauseDownload(task)"
-                      title="暂停"
-                    >
-                      <el-icon><VideoPause /></el-icon>
-                    </el-button>
-                    <el-button 
-                      v-else-if="task.status === 'waiting'" 
-                      type="info" 
-                      size="small" 
-                      circle
-                      @click.stop="pauseDownload(task)"
-                      title="取消"
-                    >
-                      <el-icon><Close /></el-icon>
-                    </el-button>
-                    <template v-else>
-                      <el-button 
-                        v-if="task.downloadInfo" 
-                        type="primary" 
-                        size="small" 
-                        circle
-                        @click.stop="resumeDownload(task)"
-                        title="继续"
-                      >
-                        <el-icon><VideoPlay /></el-icon>
-                      </el-button>
-                      <el-button 
-                        type="danger" 
-                        size="small" 
-                        circle
-                        @click.stop="deleteTask(task)"
-                        title="删除"
-                      >
-                        <el-icon><Close /></el-icon>
-                      </el-button>
-                    </template>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-          
-          <!-- 已完成 -->
-          <div v-if="completedTasks.length > 0" class="task-section">
-            <div class="section-header">
-              <div class="section-title">已完成 ({{ completedTasks.filter(t => !t.isGroup).length + completedTasks.filter(t => t.isGroup).reduce((sum, g) => sum + (g.totalCount || 0), 0) }})</div>
-              <el-button type="danger" text size="small" @click="clearCompletedTasks">
-                清空
-              </el-button>
-            </div>
-            <div class="task-list">
-              <template v-for="task in completedTasks" :key="task.id">
-                <!-- 组任务 -->
-                <div v-if="task.isGroup" class="task-group">
-                  <div 
-                    class="task-item task-group-header task-completed"
-                    :class="{ 'task-selected': isSelectMode && selectedTaskIds.includes(task.id) }"
-                    @click="isSelectMode ? toggleTaskSelect(task.id) : toggleGroupExpand(task.id)"
-                  >
-                    <el-checkbox 
-                      v-if="isSelectMode"
-                      :model-value="selectedTaskIds.includes(task.id)"
-                      @click.stop
-                      @change="toggleTaskSelect(task.id)"
-                      class="task-checkbox"
-                    />
-                    <div class="task-cover">
-                      <el-image v-if="task.cover" :src="task.cover" fit="cover" />
-                      <div v-else class="task-cover-placeholder">
-                        <el-icon><Folder /></el-icon>
-                      </div>
-                      <div class="task-type-badge">合集</div>
-                      <div class="task-status-badge completed">✓</div>
-                    </div>
-                    <div class="task-info">
-                      <div class="task-title">{{ task.title }}</div>
-                      <div class="task-status-text completed">
-                        全部下载完成 ({{ task.totalCount }}个)
-                      </div>
-                    </div>
-                    <div class="task-actions">
-                      <el-button 
-                        type="primary" 
-                        size="small" 
-                        circle
-                        @click.stop="openTaskFolder(task)"
-                        title="打开文件夹"
-                      >
-                        <el-icon><FolderOpened /></el-icon>
-                      </el-button>
-                      <el-button 
-                        type="danger" 
-                        size="small" 
-                        circle
-                        @click.stop="deleteGroupTask(task)"
-                        title="删除"
-                      >
-                        <el-icon><Close /></el-icon>
-                      </el-button>
-                    </div>
-                  </div>
-                  <!-- 子任务列表 -->
-                  <div v-if="expandedGroupIds.includes(task.id)" class="task-children">
-                    <div 
-                      v-for="child in getChildTasks(task.id)" 
-                      :key="child.id" 
-                      class="task-item task-child task-completed"
-                    >
-                      <div class="task-info">
-                        <div class="task-title">{{ child.title }}</div>
-                        <div class="task-status-text completed">✓ 已完成</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <!-- 普通任务 -->
-                <div 
-                  v-else
-                  class="task-item task-completed"
-                  :class="{ 'task-selected': isSelectMode && selectedTaskIds.includes(task.id) }"
-                  @click="isSelectMode && toggleTaskSelect(task.id)"
-                >
-                  <el-checkbox 
-                    v-if="isSelectMode"
-                    :model-value="selectedTaskIds.includes(task.id)"
-                    @click.stop
-                    @change="toggleTaskSelect(task.id)"
-                    class="task-checkbox"
-                  />
-                  <div class="task-cover">
-                    <el-image v-if="task.cover" :src="task.cover" fit="cover" />
-                    <div v-else class="task-cover-placeholder">
-                      <el-icon><VideoPlay /></el-icon>
-                    </div>
-                    <div class="task-status-badge completed">
-                      ✓
-                    </div>
-                  </div>
-                  <div class="task-info">
-                    <div class="task-title">{{ task.title }}</div>
-                    <div class="task-status-text completed">
-                      下载完成
-                    </div>
-                  </div>
-                  <div class="task-actions">
-                    <el-button 
-                      type="primary" 
-                      size="small" 
-                      circle
-                      @click.stop="openTaskFolder(task)"
-                      title="打开文件夹"
-                    >
-                      <el-icon><FolderOpened /></el-icon>
-                    </el-button>
-                    <el-button 
-                      type="danger" 
-                      size="small" 
-                      circle
-                      @click.stop="deleteTask(task)"
-                      title="删除"
-                    >
-                      <el-icon><Close /></el-icon>
-                    </el-button>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-          
-          <!-- 下载失败 -->
-          <div v-if="failedTasks.length > 0" class="task-section">
-            <div class="section-header">
-              <div class="section-title failed-title">下载失败 ({{ failedTasks.filter(t => !t.isGroup).length + failedTasks.filter(t => t.isGroup).reduce((sum, g) => sum + (g.failedCount || 0), 0) }})</div>
-              <el-button type="danger" text size="small" @click="clearFailedTasks">
-                清空
-              </el-button>
-            </div>
-            <div class="task-list">
-              <template v-for="task in failedTasks" :key="task.id">
-                <!-- 组任务（合集） -->
-                <div v-if="task.isGroup" class="task-group">
-                  <div 
-                    class="task-item task-group-header task-failed"
-                    :class="{ 'task-selected': isSelectMode && selectedTaskIds.includes(task.id) }"
-                    @click="isSelectMode ? toggleTaskSelect(task.id) : toggleGroupExpand(task.id)"
-                  >
-                    <el-checkbox 
-                      v-if="isSelectMode"
-                      :model-value="selectedTaskIds.includes(task.id)"
-                      @click.stop
-                      @change="toggleTaskSelect(task.id)"
-                      class="task-checkbox"
-                    />
-                    <div class="task-cover">
-                      <el-image v-if="task.cover" :src="task.cover" fit="cover" />
-                      <div v-else class="task-cover-placeholder">
-                        <el-icon><Folder /></el-icon>
-                      </div>
-                      <div class="task-type-badge">合集</div>
-                      <div class="task-status-badge failed">✗</div>
-                    </div>
-                    <div class="task-info">
-                      <div class="task-title">{{ task.title }}</div>
-                      <div class="task-group-progress">
-                        <span class="group-progress-text">{{ task.completedCount }}/{{ task.totalCount }}</span>
-                        <span class="group-progress-label">已完成</span>
-                        <span class="group-failed-text">{{ task.failedCount }} 个失败</span>
-                      </div>
-                    </div>
-                    <div class="task-actions">
-                      <el-button 
-                        type="warning" 
-                        size="small" 
-                        circle
-                        @click.stop="retryFailedChildren(task)"
-                        title="重试失败"
-                      >
-                        <el-icon><RefreshRight /></el-icon>
-                      </el-button>
-                      <el-button 
-                        type="danger" 
-                        size="small" 
-                        circle
-                        @click.stop="deleteGroupTask(task)"
-                        title="删除"
-                      >
-                        <el-icon><Close /></el-icon>
-                      </el-button>
-                    </div>
-                  </div>
-                  <!-- 子任务列表 -->
-                  <div v-if="expandedGroupIds.includes(task.id)" class="task-children">
-                    <div 
-                      v-for="child in getChildTasks(task.id)" 
-                      :key="child.id" 
-                      class="task-item task-child"
-                      :class="{ 
-                        'task-completed': child.status === 'completed',
-                        'task-failed': child.status === 'failed'
-                      }"
-                    >
-                      <div class="task-info">
-                        <div class="task-title">{{ child.title }}</div>
-                        <div v-if="child.status === 'completed'" class="task-status-text completed">
-                          ✓ 已完成
-                        </div>
-                        <div v-else-if="child.status === 'failed'" class="task-status-text failed" :title="child.error">
-                          {{ child.error || '下载失败' }}
-                        </div>
-                      </div>
-                      <div v-if="child.status === 'failed'" class="task-child-actions">
-                        <el-button 
-                          type="primary" 
-                          size="small" 
-                          circle
-                          @click.stop="retryChildTask(child)"
-                          title="重试"
-                        >
-                          <el-icon><RefreshRight /></el-icon>
-                        </el-button>
-                        <el-button 
-                          type="danger" 
-                          size="small" 
-                          circle
-                          @click.stop="deleteChildTask(task.id, child.id)"
-                          title="删除"
-                        >
-                          <el-icon><Close /></el-icon>
-                        </el-button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <!-- 普通任务 -->
-                <div 
-                  v-else
-                  class="task-item task-failed"
-                  :class="{ 'task-selected': isSelectMode && selectedTaskIds.includes(task.id) }"
-                  @click="isSelectMode && toggleTaskSelect(task.id)"
-                >
-                  <!-- 选择模式下显示勾选框 -->
-                  <el-checkbox 
-                    v-if="isSelectMode"
-                    :model-value="selectedTaskIds.includes(task.id)"
-                    @click.stop
-                    @change="toggleTaskSelect(task.id)"
-                    class="task-checkbox"
-                  />
-                  <div class="task-cover">
-                    <el-image v-if="task.cover" :src="task.cover" fit="cover" />
-                    <div v-else class="task-cover-placeholder">
-                      <el-icon><VideoPlay /></el-icon>
-                    </div>
-                    <div class="task-status-badge failed">
-                      ✗
-                    </div>
-                  </div>
-                  <div class="task-info">
-                    <div class="task-title">{{ task.title }}</div>
-                    <div class="task-status-text failed" :title="task.error">
-                      {{ task.error || '下载失败' }}
-                    </div>
-                  </div>
-                  <div class="task-actions">
-                    <el-button 
-                      v-if="task.downloadInfo" 
-                      type="primary" 
-                      size="small" 
-                      circle
-                      @click.stop="resumeDownload(task)"
-                      title="重试"
-                    >
-                      <el-icon><RefreshRight /></el-icon>
-                    </el-button>
-                    <el-button 
-                      type="danger" 
-                      size="small" 
-                      circle
-                      @click.stop="deleteTask(task)"
-                      title="删除"
-                    >
-                      <el-icon><Close /></el-icon>
-                    </el-button>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </template>
-      </div>
+      <DownloadCenter
+        :tasks="downloadTasks"
+        :is-select-mode="isSelectMode"
+        :selected-task-ids="selectedTaskIds"
+        :expanded-group-ids="expandedGroupIds"
+        @pause-task="pauseDownload"
+        @resume-task="resumeDownload"
+        @delete-task="deleteTask"
+        @open-folder="openTaskFolder"
+        @pause-group="pauseGroupDownload"
+        @resume-group="resumeGroupDownload"
+        @delete-group="deleteGroupTask"
+        @retry-failed-children="retryFailedChildren"
+        @retry-child="retryChildTask"
+        @delete-child="deleteChildTask"
+        @toggle-group-expand="toggleGroupExpand"
+        @toggle-select-mode="toggleSelectMode"
+        @toggle-task-select="toggleTaskSelect"
+        @toggle-select-all="toggleSelectAllActive"
+        @confirm-delete-selected="confirmDeleteSelected"
+        @pause-all="pauseAllTasks"
+        @resume-all="resumeAllTasks"
+        @clear-completed="clearCompletedTasks"
+        @clear-failed="clearFailedTasks"
+      />
     </el-drawer>
 
     <!-- 设置抽屉 -->
@@ -5039,408 +4340,3 @@ html.dark .el-message--error {
   to { transform: rotate(360deg); }
 }
 
-/* 下载中心 */
-.download-center {
-  height: 100%;
-}
-
-.download-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-color);
-  flex-wrap: wrap;
-}
-
-.download-actions .el-button {
-  flex: 1;
-  min-width: 80px;
-}
-
-.download-actions .el-checkbox {
-  display: flex;
-  align-items: center;
-}
-
-.empty-tasks {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 300px;
-  color: var(--text-muted);
-  gap: 12px;
-}
-
-.task-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.task-item {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  background: var(--bg-hover);
-  border-radius: 8px;
-  transition: background 0.2s, border-color 0.2s;
-  position: relative;
-}
-
-.task-item.task-selected {
-  background: rgba(251, 114, 153, 0.15);
-  border: 1px solid #fb7299;
-}
-
-.task-checkbox {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.task-checkbox .el-checkbox {
-  margin-right: 0;
-}
-
-/* 组任务样式 */
-.task-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.task-group-header {
-  cursor: pointer;
-}
-
-.group-expand-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform 0.2s;
-}
-
-.group-expand-icon .el-icon {
-  transition: transform 0.2s;
-}
-
-.group-expand-icon .el-icon.is-expanded {
-  transform: rotate(90deg);
-}
-
-.task-group-progress {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.group-progress-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: #fb7299;
-}
-
-.group-progress-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.group-failed-text {
-  font-size: 12px;
-  color: #f56c6c;
-  margin-left: 8px;
-}
-
-.task-children {
-  margin-left: 20px;
-  border-left: 2px solid var(--border-color);
-  padding-left: 8px;
-  margin-top: 4px;
-}
-
-.task-child {
-  padding: 8px 12px;
-  background: var(--bg-primary);
-  border: none !important;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.task-child .task-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.task-child .task-title {
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-
-.task-child .task-progress {
-  gap: 2px;
-}
-
-.task-child .task-status-text {
-  font-size: 11px;
-}
-
-.task-child-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.task-child:hover .task-child-actions {
-  opacity: 1;
-}
-
-.task-child-actions .el-button {
-  width: 24px !important;
-  height: 24px !important;
-  padding: 0 !important;
-}
-
-.task-child-actions .el-button .el-icon {
-  font-size: 12px;
-}
-
-.task-item.task-downloading {
-  background: rgba(251, 114, 153, 0.1);
-  border: 1px solid rgba(251, 114, 153, 0.3);
-}
-
-.task-item.task-waiting {
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
-}
-
-.task-item.task-completed {
-  opacity: 0.8;
-}
-
-.task-item.task-failed {
-  background: rgba(245, 108, 108, 0.08);
-  border: 1px solid rgba(245, 108, 108, 0.3);
-}
-
-.section-title.failed-title {
-  color: #f56c6c;
-}
-
-.task-cover {
-  width: 80px;
-  height: 50px;
-  border-radius: 6px;
-  overflow: hidden;
-  position: relative;
-  flex-shrink: 0;
-  background: var(--bg-primary);
-}
-
-.task-cover .el-image {
-  width: 100%;
-  height: 100%;
-}
-
-.task-cover-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-}
-
-.task-status-badge {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: bold;
-}
-
-.task-status-badge.downloading {
-  background: #fb7299;
-  color: #fff;
-}
-
-.task-status-badge.completed {
-  background: #52c41a;
-  color: #fff;
-}
-
-.task-status-badge.failed {
-  background: #ff4d4f;
-  color: #fff;
-}
-
-.task-status-badge.paused {
-  background: #faad14;
-  color: #fff;
-}
-
-.task-status-badge.waiting {
-  background: #909399;
-  color: #fff;
-  font-size: 8px;
-}
-
-/* 合集类型标签 */
-.task-type-badge {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: 500;
-  background: rgba(251, 114, 153, 0.9);
-  color: #fff;
-}
-
-.task-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.task-title {
-  font-size: 13px;
-  color: var(--text-primary);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-bottom: 6px;
-}
-
-.task-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.task-progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.task-stage {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.task-size-speed {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.task-size {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.task-speed {
-  font-size: 11px;
-  color: #fb7299;
-  font-weight: 500;
-}
-
-.task-progress .el-progress {
-  flex: 1;
-}
-
-.task-percent {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  text-align: right;
-}
-
-.task-status-text {
-  font-size: 12px;
-}
-
-.task-status-text.completed {
-  color: #52c41a;
-}
-
-.task-status-text.failed {
-  color: #ff4d4f;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 180px;
-  cursor: help;
-}
-
-.task-status-text.paused {
-  color: #faad14;
-}
-
-.task-status-text.waiting {
-  color: #909399;
-}
-
-.task-section {
-  margin-bottom: 20px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.section-header .section-title {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.task-actions {
-  display: flex;
-  align-items: center;
-  margin-left: 8px;
-}
-
-.task-actions .el-button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-}
-</style>
