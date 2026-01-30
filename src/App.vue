@@ -256,7 +256,7 @@ const showSettings = ref(false);
 // const updateInfo = ref<{ version: string; body?: string } | null>(null);
 // const isDownloadingUpdate = ref(false);
 // const updateProgress = ref(0);
-// const currentVersion = '0.1.0';
+const currentVersion = '0.2.0';
 
 // 用户设置
 interface UserSettings {
