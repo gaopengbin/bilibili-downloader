@@ -1056,6 +1056,7 @@ async fn fetch_season_info(bvid: &str) -> Option<SeasonInfo> {
 /// 从完整标题中提取分P名称
 /// 输入格式一般是: "主标题 pXX 分P名" 或 "主标题 pXX. 分P名"
 /// 返回格式: "分P名" (保留原始序号如 "01. XXX")
+#[allow(dead_code)]
 fn extract_part_title(full_title: &str, main_title: &str, _index: usize) -> String {
     // 如果完整标题以主标题开头，尝试移除主标题部分
     // 使用字符边界安全的方式截取
@@ -1774,7 +1775,7 @@ async fn download_video(
     let stderr_handle = std::thread::spawn(move || {
         let mut error_output = String::new();
         if let Some(stderr) = stderr {
-            use std::io::{BufRead, BufReader};
+            use std::io::BufReader;
             let mut reader = BufReader::new(stderr);
             let mut line_buf = String::new();
             let mut current_stage = 0;
@@ -1953,7 +1954,7 @@ async fn download_video(
                 let parts: Vec<&str> = line.splitn(6, ':').collect();
                 if parts.len() >= 3 {
                     let percent_str = parts[1].trim().replace('%', "");
-                    let ext = parts[2].trim();
+                    let _ext = parts[2].trim();
                     let speed = if parts.len() >= 4 { parts[3].trim() } else { "" };
                     let downloaded = if parts.len() >= 5 { parts[4].trim() } else { "" };
                     let total_size = if parts.len() >= 6 { parts[5].trim() } else { "" };
