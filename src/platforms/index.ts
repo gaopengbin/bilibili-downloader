@@ -1,5 +1,11 @@
 export * from './interface';
 
-// 平台实现会在这里注册
-// import { BilibiliPlatform } from './bilibili';
-// registerPlatform(new BilibiliPlatform());
+// B站平台
+export { BilibiliPlatform, bilibiliPlatform } from './bilibili';
+export * as bilibiliApi from './bilibili/api';
+
+// 注册所有平台
+import { registerPlatform } from './interface';
+import { bilibiliPlatform } from './bilibili';
+
+registerPlatform(bilibiliPlatform);
