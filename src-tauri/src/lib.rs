@@ -1448,13 +1448,21 @@ async fn fetch_available_formats(bvid: &str, cid: u64, cookies: &Option<String>)
         return None;
     }
 
-    // 使用 support_formats 获取实际可用的清晰度（而不是 accept_quality）
-    // support_formats 只包含当前用户权限下可以观看的清晰度
+    // 获取当前权限下可用的最高清晰度
+    // B站返回的 quality 字段表示当前用户权限下实际可播放的最高清晰度
+    let max_available_qn = json["data"]["quality"].as_u64().unwrap_or(64) as u32;
+    
     let mut formats = Vec::new();
     
     if let Some(support_formats) = json["data"]["support_formats"].as_array() {
         for fmt in support_formats {
             let qn_val = fmt["quality"].as_u64().unwrap_or(0) as u32;
+            
+            // 只添加当前权限可用的清晰度（小于等于 max_available_qn）
+            if qn_val > max_available_qn {
+                continue;
+            }
+            
             let desc = fmt["new_description"].as_str()
                 .or_else(|| fmt["display_desc"].as_str())
                 .map(|s| s.to_string());

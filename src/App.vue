@@ -257,7 +257,7 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.10.0';
+const currentVersion = '0.10.1';
 
 // 从更新日志中提取关键更新内容
 const extractKeyUpdates = (body: string): string[] => {
