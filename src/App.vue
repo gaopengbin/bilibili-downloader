@@ -251,12 +251,65 @@ const isDarkMode = ref(false);
 const showSettings = ref(false);
 
 // 更新相关
-// 更新功能暂未启用
-// const isCheckingUpdate = ref(false);
-// const updateInfo = ref<{ version: string; body?: string } | null>(null);
-// const isDownloadingUpdate = ref(false);
-// const updateProgress = ref(0);
+const isCheckingUpdate = ref(false);
+const updateInfo = ref<{ version: string; body?: string; url: string } | null>(null);
+const showUpdateDialog = ref(false);
 const currentVersion = '0.2.0';
+
+// 检查更新
+const checkForUpdate = async (silent = false) => {
+  if (isCheckingUpdate.value) return;
+  
+  isCheckingUpdate.value = true;
+  try {
+    const response = await fetch('https://api.github.com/repos/gaopengbin/bilibili-downloader/releases/latest');
+    if (!response.ok) throw new Error('获取更新信息失败');
+    
+    const data = await response.json();
+    const latestVersion = data.tag_name.replace(/^v/, ''); // 去掉 v 前缀
+    
+    // 比较版本号
+    if (compareVersions(latestVersion, currentVersion) > 0) {
+      updateInfo.value = {
+        version: latestVersion,
+        body: data.body,
+        url: data.html_url
+      };
+      showUpdateDialog.value = true;
+    } else if (!silent) {
+      ElMessage.success('当前已是最新版本');
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error);
+    if (!silent) {
+      ElMessage.error('检查更新失败，请稍后重试');
+    }
+  } finally {
+    isCheckingUpdate.value = false;
+  }
+};
+
+// 版本号比较 (返回 1: a > b, -1: a < b, 0: a == b)
+const compareVersions = (a: string, b: string): number => {
+  const partsA = a.split('.').map(Number);
+  const partsB = b.split('.').map(Number);
+  
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const numA = partsA[i] || 0;
+    const numB = partsB[i] || 0;
+    if (numA > numB) return 1;
+    if (numA < numB) return -1;
+  }
+  return 0;
+};
+
+// 打开下载页面
+const openReleasePage = () => {
+  if (updateInfo.value?.url) {
+    window.open(updateInfo.value.url, '_blank');
+  }
+  showUpdateDialog.value = false;
+};
 
 // 用户设置
 interface UserSettings {
@@ -423,6 +476,11 @@ onMounted(async () => {
   
   // 初始化完成，关闭开屏窗口并显示主窗口
   await invoke('close_splashscreen');
+  
+  // 静默检查更新（启动后延迟3秒检查，不打扰用户）
+  setTimeout(() => {
+    checkForUpdate(true);
+  }, 3000);
   
   // 监听窗口关闭事件
   const appWindow = getCurrentWindow();
@@ -3526,13 +3584,46 @@ async function loadMoreFavorites() {
           <div class="settings-about">
             <p>哔哩哔哩下载器 v{{ currentVersion }}</p>
             <p class="settings-about-desc">基于 Tauri + Vue 3 开发</p>
-            <p class="settings-about-desc">
-              <a href="https://github.com/gaopengbin/bilibili-downloader/releases" target="_blank">检查更新</a>
+            <p class="settings-about-link">
+              <el-button 
+                type="primary" 
+                link 
+                :loading="isCheckingUpdate"
+                @click="checkForUpdate(false)"
+              >
+                {{ isCheckingUpdate ? '检查中...' : '检查更新' }}
+              </el-button>
+              <span class="link-divider">|</span>
+              <a href="https://github.com/gaopengbin/bilibili-downloader" target="_blank">GitHub</a>
             </p>
           </div>
         </div>
       </div>
     </el-drawer>
+    
+    <!-- 更新提示对话框 -->
+    <el-dialog
+      v-model="showUpdateDialog"
+      title="发现新版本"
+      width="420px"
+      :close-on-click-modal="false"
+    >
+      <div class="update-dialog-content">
+        <div class="update-version">
+          <span class="old-version">v{{ currentVersion }}</span>
+          <span class="version-arrow">→</span>
+          <span class="new-version">v{{ updateInfo?.version }}</span>
+        </div>
+        <div v-if="updateInfo?.body" class="update-notes">
+          <div class="update-notes-title">更新内容：</div>
+          <div class="update-notes-content">{{ updateInfo.body }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showUpdateDialog = false">稍后再说</el-button>
+        <el-button type="primary" @click="openReleasePage">前往下载</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -4739,8 +4830,78 @@ html.dark .el-radio-button__inner {
   opacity: 0.7;
 }
 
+.settings-about-link {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-about-link a {
+  color: var(--el-color-primary);
+  text-decoration: none;
+}
+
+.settings-about-link a:hover {
+  text-decoration: underline;
+}
+
+.settings-about-link .link-divider {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
 .settings-update {
   margin-top: 12px;
+}
+
+/* 更新对话框 */
+.update-dialog-content {
+  padding: 10px 0;
+}
+
+.update-version {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 18px;
+  margin-bottom: 20px;
+}
+
+.update-version .old-version {
+  color: var(--text-secondary);
+}
+
+.update-version .version-arrow {
+  color: var(--el-color-primary);
+  font-weight: bold;
+}
+
+.update-version .new-version {
+  color: var(--el-color-primary);
+  font-weight: bold;
+}
+
+.update-notes {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.update-notes-title {
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.update-notes-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
 
 /* 下载中心 */
