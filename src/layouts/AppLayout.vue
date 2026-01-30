@@ -134,7 +134,11 @@ onMounted(async () => {
     ElMessage.error('初始化失败，请重新启动程序');
   }
   
-  await checkLoginStatus();
+  try {
+    await checkLoginStatus();
+  } catch (error) {
+    console.error('检查登录状态失败:', error);
+  }
   
   // 确保开屏动画至少显示3秒
   const elapsed = Date.now() - splashStart;
@@ -143,7 +147,11 @@ onMounted(async () => {
   }
   
   // 初始化完成，关闭开屏窗口并显示主窗口
-  await invoke('close_splashscreen');
+  try {
+    await invoke('close_splashscreen');
+  } catch (error) {
+    console.error('关闭启动屏幕失败:', error);
+  }
   
   // 静默检查更新（启动后延迟3秒检查，不打扰用户）
   setTimeout(() => {

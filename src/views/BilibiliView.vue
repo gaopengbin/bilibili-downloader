@@ -1229,94 +1229,123 @@ defineExpose({
 .bilibili-main {
   flex: 1;
   display: flex;
+  gap: 0;
+  width: 100%;
+  padding: 16px;
   min-height: 0;
-  position: relative;
+  overflow: hidden;
 }
 
 .bilibili-main.is-dragging {
   user-select: none;
-}
-
-.left-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 300px;
-  background: var(--bg-primary);
-}
-
-.right-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 300px;
-  overflow: hidden;
-}
-
-.panel-divider {
-  width: 4px;
-  background: var(--border-color);
   cursor: col-resize;
+}
+
+/* 左侧面板 */
+.left-panel {
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding-right: 8px;
+}
+
+/* 可拖动分隔条 */
+.panel-divider {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
   flex-shrink: 0;
-  transition: background-color 0.2s;
 }
 
-.panel-divider:hover {
-  background: var(--primary-color);
+.panel-divider::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 40px;
+  background: var(--border-color);
+  border-radius: 1px;
+  transition: background 0.2s, height 0.2s;
 }
 
-/* Tab 导航 */
+.panel-divider:hover::before {
+  background: #fb7299;
+  height: 60px;
+}
+
+/* 右侧面板 */
+.right-panel {
+  min-width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding-left: 8px;
+}
+
+/* ==================== Tab 导航 ==================== */
+
 .tab-nav {
   display: flex;
-  border-bottom: 1px solid var(--border-color);
   background: var(--bg-card);
-  padding: 0 8px;
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px var(--shadow-color);
+  flex-shrink: 0;
+  transition: background 0.3s;
 }
 
 .tab-item {
+  flex: 1;
+  padding: 10px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 12px 16px;
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
   color: var(--text-secondary);
-  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  border-radius: 8px;
   transition: all 0.2s;
-  font-size: 14px;
 }
 
 .tab-item:hover {
-  color: var(--text-primary);
+  color: #fb7299;
 }
 
 .tab-item.active {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
-}
-
-.tab-item .el-icon {
-  font-size: 16px;
+  color: #fff;
+  background: #fb7299;
 }
 
 /* Tab 内容 */
 .tab-content {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 16px;
   flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  transition: background 0.3s;
 }
 
 .tab-pane {
-  flex: 1;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  overflow: hidden;
 }
 
-/* 搜索框 */
+/* ==================== 搜索框 ==================== */
+
 .search-box {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .search-box .el-input {
@@ -1326,49 +1355,51 @@ defineExpose({
 .search-types {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .type-tag {
-  padding: 4px 12px;
-  border-radius: 4px;
+  padding: 6px 16px;
   font-size: 13px;
-  cursor: pointer;
   color: var(--text-secondary);
   background: var(--bg-hover);
+  border-radius: 6px;
+  cursor: pointer;
   transition: all 0.2s;
 }
 
 .type-tag:hover {
-  color: var(--primary-color);
+  color: #fb7299;
 }
 
 .type-tag.active {
   color: #fff;
-  background: var(--primary-color);
+  background: #fb7299;
 }
 
-/* 链接输入提示 */
+/* ==================== 链接提示 ==================== */
+
 .link-tips {
-  margin-top: 16px;
-  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 20px;
   background: var(--bg-hover);
   border-radius: 8px;
-  color: var(--text-secondary);
-  font-size: 13px;
 }
 
 .link-tips p {
   margin-bottom: 8px;
   font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .link-tips ul {
-  margin: 0;
   padding-left: 20px;
+  margin: 0;
 }
 
 .link-tips li {
-  margin: 4px 0;
+  margin: 6px 0;
 }
 </style>
