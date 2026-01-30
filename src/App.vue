@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { marked } from 'marked';
 // import { check } from '@tauri-apps/plugin-updater';
 // import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -257,7 +258,18 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.7.0';
+const currentVersion = '0.8.0';
+
+// 渲染更新日志的 Markdown
+const renderedUpdateBody = computed(() => {
+  if (!updateInfo.value?.body) return '';
+  // 配置 marked 选项
+  marked.setOptions({
+    breaks: true, // 支持换行
+    gfm: true,    // 支持 GitHub 风格 Markdown
+  });
+  return marked.parse(updateInfo.value.body) as string;
+});
 
 // 检查更新
 const checkForUpdate = async (silent = false) => {
@@ -3698,7 +3710,7 @@ async function loadMoreFavorites() {
             </svg>
             <span>更新内容</span>
           </div>
-          <div class="update-notes-content">{{ updateInfo.body }}</div>
+          <div class="update-notes-content markdown-body" v-html="renderedUpdateBody"></div>
         </div>
         
         <div v-if="isDownloadingUpdate" class="update-progress">
@@ -5247,8 +5259,86 @@ html.dark .el-message--error {
 .update-notes-content {
   font-size: 13px;
   color: var(--text-secondary);
-  white-space: pre-wrap;
   line-height: 1.8;
+}
+
+/* Markdown 渲染样式 */
+.update-notes-content.markdown-body {
+  font-size: 13px;
+}
+
+.update-notes-content.markdown-body h1,
+.update-notes-content.markdown-body h2,
+.update-notes-content.markdown-body h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 12px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.update-notes-content.markdown-body h3 {
+  border-bottom: none;
+  margin: 8px 0 6px;
+}
+
+.update-notes-content.markdown-body p {
+  margin: 6px 0;
+}
+
+.update-notes-content.markdown-body ul,
+.update-notes-content.markdown-body ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.update-notes-content.markdown-body li {
+  margin: 4px 0;
+}
+
+.update-notes-content.markdown-body code {
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #fb7299;
+}
+
+.update-notes-content.markdown-body pre {
+  background: var(--bg-primary);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.update-notes-content.markdown-body pre code {
+  background: none;
+  padding: 0;
+  color: var(--text-primary);
+}
+
+.update-notes-content.markdown-body strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.update-notes-content.markdown-body a {
+  color: #fb7299;
+  text-decoration: none;
+}
+
+.update-notes-content.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.update-notes-content.markdown-body blockquote {
+  border-left: 3px solid #fb7299;
+  margin: 8px 0;
+  padding: 4px 12px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
 }
 
 .update-progress {
