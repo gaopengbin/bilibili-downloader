@@ -1241,13 +1241,26 @@ async fn get_bangumi_info(
     let client = reqwest::Client::new();
     let mut req = client.get(&api_url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        .header("Referer", "https://www.bilibili.com/");
+        .header("Referer", "https://www.bilibili.com/")
+        .header("Accept", "application/json, text/plain, */*")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("Origin", "https://www.bilibili.com");
     
     if let Some(ref c) = cookies {
         req = req.header("Cookie", c);
     }
 
     let resp = req.send().await.map_err(|e| e.to_string())?;
+    
+    // 检查 HTTP 状态码
+    if resp.status() == 412 {
+        return Ok(ApiResponse {
+            success: false,
+            data: None,
+            error: Some("请求被拒绝(412)，请稍后重试或登录后再试".to_string()),
+        });
+    }
+    
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
 
     // 检查 API 返回
@@ -1265,11 +1278,14 @@ async fn get_bangumi_info(
     let mut entries: Vec<VideoEntry> = Vec::new();
     let episodes = result["episodes"].as_array();
     
+    // 检查是否有剧集
+    let has_episodes = episodes.map(|e| !e.is_empty()).unwrap_or(false);
+    
     if let Some(eps) = episodes {
         for (idx, ep) in eps.iter().enumerate() {
             let ep_id = ep["id"].as_u64().unwrap_or(0);
-            let bvid = ep["bvid"].as_str().unwrap_or("");
-            let cid = ep["cid"].as_u64().unwrap_or(0);
+            let _bvid = ep["bvid"].as_str().unwrap_or("");
+            let _cid = ep["cid"].as_u64().unwrap_or(0);
             
             entries.push(VideoEntry {
                 index: idx + 1,
@@ -1284,6 +1300,15 @@ async fn get_bangumi_info(
                 thumbnail: None,
             });
         }
+    }
+    
+    // 如果没有剧集且未登录，提示用户
+    if !has_episodes && cookies.is_none() {
+        return Ok(ApiResponse {
+            success: false,
+            data: None,
+            error: Some("该影视需要登录后才能获取剧集列表，请先登录".to_string()),
+        });
     }
 
     // 获取可用清晰度（从第一集）
@@ -1406,8 +1431,11 @@ async fn fetch_available_formats(bvid: &str, cid: u64, cookies: &Option<String>)
 
     let client = reqwest::Client::new();
     let mut req = client.get(&api_url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .header("Referer", "https://www.bilibili.com/");
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .header("Referer", "https://www.bilibili.com/")
+        .header("Accept", "application/json, text/plain, */*")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .header("Origin", "https://www.bilibili.com");
     
     if let Some(ref c) = cookies {
         req = req.header("Cookie", c);
@@ -1420,13 +1448,17 @@ async fn fetch_available_formats(bvid: &str, cid: u64, cookies: &Option<String>)
         return None;
     }
 
-    // 解析支持的清晰度
+    // 使用 support_formats 获取实际可用的清晰度（而不是 accept_quality）
+    // support_formats 只包含当前用户权限下可以观看的清晰度
     let mut formats = Vec::new();
-    if let Some(accept_quality) = json["data"]["accept_quality"].as_array() {
-        let accept_desc = json["data"]["accept_description"].as_array();
-        
-        for (i, qn) in accept_quality.iter().enumerate() {
-            let qn_val = qn.as_u64().unwrap_or(0) as u32;
+    
+    if let Some(support_formats) = json["data"]["support_formats"].as_array() {
+        for fmt in support_formats {
+            let qn_val = fmt["quality"].as_u64().unwrap_or(0) as u32;
+            let desc = fmt["new_description"].as_str()
+                .or_else(|| fmt["display_desc"].as_str())
+                .map(|s| s.to_string());
+            
             let height = match qn_val {
                 127 => 2160, // 8K (实际4K HDR)
                 126 => 2160, // 杜比视界
@@ -1443,11 +1475,6 @@ async fn fetch_available_formats(bvid: &str, cid: u64, cookies: &Option<String>)
             };
             
             if height > 0 {
-                let desc = accept_desc
-                    .and_then(|d| d.get(i))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                
                 formats.push(VideoFormat {
                     height: Some(height),
                     format_note: desc,

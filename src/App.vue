@@ -5,7 +5,6 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { marked } from 'marked';
 // import { check } from '@tauri-apps/plugin-updater';
 // import { relaunch } from '@tauri-apps/plugin-process';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -258,17 +257,40 @@ const isDownloadingUpdate = ref(false);
 const updateDownloadProgress = ref(0);
 const updateInfo = ref<{ version: string; body?: string; url: string; downloadUrl?: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.9.0';
+const currentVersion = '0.10.0';
 
-// 渲染更新日志的 Markdown
-const renderedUpdateBody = computed(() => {
-  if (!updateInfo.value?.body) return '';
-  // 配置 marked 选项
-  marked.setOptions({
-    breaks: true, // 支持换行
-    gfm: true,    // 支持 GitHub 风格 Markdown
-  });
-  return marked.parse(updateInfo.value.body) as string;
+// 从更新日志中提取关键更新内容
+const extractKeyUpdates = (body: string): string[] => {
+  if (!body) return [];
+  
+  const updates: string[] = [];
+  const lines = body.split('\n');
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // 匹配以 - 或 * 开头的列表项，提取关键内容
+    if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
+      // 去掉开头的 - 或 * 和 emoji
+      let content = trimmed.slice(1).trim();
+      // 去掉开头的 emoji (常见格式如 ✨ 🐛 🎨 等)
+      content = content.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u, '');
+      // 提取 **xxx** 中的内容作为标题
+      const boldMatch = content.match(/\*\*(.+?)\*\*/);
+      if (boldMatch) {
+        updates.push(boldMatch[1]);
+      } else if (content.length > 0 && content.length < 50) {
+        updates.push(content);
+      }
+    }
+  }
+  
+  return updates.slice(0, 5); // 最多显示5条
+};
+
+// 计算属性：关键更新列表
+const keyUpdates = computed(() => {
+  if (!updateInfo.value?.body) return [];
+  return extractKeyUpdates(updateInfo.value.body);
 });
 
 // 检查更新
@@ -3703,14 +3725,16 @@ async function loadMoreFavorites() {
           </div>
         </div>
         
-        <div v-if="updateInfo?.body" class="update-notes">
+        <div v-if="keyUpdates.length > 0" class="update-notes">
           <div class="update-notes-header">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
               <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <span>更新内容</span>
           </div>
-          <div class="update-notes-content markdown-body" v-html="renderedUpdateBody"></div>
+          <ul class="update-notes-list">
+            <li v-for="(item, index) in keyUpdates" :key="index">{{ item }}</li>
+          </ul>
         </div>
         
         <div v-if="isDownloadingUpdate" class="update-progress">
@@ -5256,89 +5280,31 @@ html.dark .el-message--error {
   color: #fb7299;
 }
 
-.update-notes-content {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.8;
-}
-
-/* Markdown 渲染样式 */
-.update-notes-content.markdown-body {
-  font-size: 13px;
-}
-
-.update-notes-content.markdown-body h1,
-.update-notes-content.markdown-body h2,
-.update-notes-content.markdown-body h3 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 12px 0 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.update-notes-content.markdown-body h3 {
-  border-bottom: none;
-  margin: 8px 0 6px;
-}
-
-.update-notes-content.markdown-body p {
-  margin: 6px 0;
-}
-
-.update-notes-content.markdown-body ul,
-.update-notes-content.markdown-body ol {
-  margin: 6px 0;
-  padding-left: 20px;
-}
-
-.update-notes-content.markdown-body li {
-  margin: 4px 0;
-}
-
-.update-notes-content.markdown-body code {
-  background: var(--bg-primary);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #fb7299;
-}
-
-.update-notes-content.markdown-body pre {
-  background: var(--bg-primary);
-  padding: 12px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 8px 0;
-}
-
-.update-notes-content.markdown-body pre code {
-  background: none;
+/* 简洁的更新列表样式 */
+.update-notes-list {
+  margin: 0;
   padding: 0;
-  color: var(--text-primary);
+  list-style: none;
 }
 
-.update-notes-content.markdown-body strong {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.update-notes-content.markdown-body a {
-  color: #fb7299;
-  text-decoration: none;
-}
-
-.update-notes-content.markdown-body a:hover {
-  text-decoration: underline;
-}
-
-.update-notes-content.markdown-body blockquote {
-  border-left: 3px solid #fb7299;
-  margin: 8px 0;
-  padding: 4px 12px;
-  background: var(--bg-primary);
+.update-notes-list li {
+  position: relative;
+  padding: 8px 0 8px 20px;
+  font-size: 13px;
   color: var(--text-secondary);
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.update-notes-list li:last-child {
+  border-bottom: none;
+}
+
+.update-notes-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #fb7299;
+  font-weight: bold;
 }
 
 .update-progress {
