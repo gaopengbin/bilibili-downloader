@@ -1,3 +1,8 @@
+// 模块声明（渐进式重构用）
+pub mod models;
+pub mod utils;
+// pub mod commands; // 待完全迁移后启用
+
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
