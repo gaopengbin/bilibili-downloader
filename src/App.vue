@@ -254,7 +254,7 @@ const showSettings = ref(false);
 const isCheckingUpdate = ref(false);
 const updateInfo = ref<{ version: string; body?: string; url: string } | null>(null);
 const showUpdateDialog = ref(false);
-const currentVersion = '0.2.0';
+const currentVersion = '0.3.0';
 
 // 检查更新
 const checkForUpdate = async (silent = false) => {
