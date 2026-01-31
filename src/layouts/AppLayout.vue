@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, provide, computed } from "vue";
-import { useRouter, useRoute } from 'vue-router';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { 
-  Download, Close, Sunny, Moon, Setting, Back
+  Download, Close, Sunny, Moon, Setting, Minus, FullScreen, CloseBold, User
 } from '@element-plus/icons-vue';
 
 // 引入组件
@@ -16,8 +15,6 @@ import { useAppStore, useUserStore } from '@/stores';
 // 引入类型
 import type { UserInfo, ApiResponse } from '@/types';
 
-const router = useRouter();
-const route = useRoute();
 const appStore = useAppStore();
 const userStore = useUserStore();
 
@@ -26,21 +23,6 @@ const userStore = useUserStore();
 const userInfo = ref<UserInfo | null>(null);
 const isDarkMode = ref(false);
 const showSettings = ref(false);
-
-// 当前平台信息
-const currentPlatform = computed(() => {
-  const name = route.name as string;
-  const platformMap: Record<string, { name: string; color: string }> = {
-    Bilibili: { name: '哔哩哔哩', color: '#fb7299' },
-    // 未来可添加更多平台
-  };
-  return platformMap[name] || null;
-});
-
-// 是否在平台页面（非首页）
-const isInPlatform = computed(() => {
-  return route.path !== '/' && currentPlatform.value !== null;
-});
 
 // ==================== 主题 ====================
 
@@ -108,14 +90,30 @@ const getDownloadingCount = () => {
 // 提供给子组件
 provide('bilibiliViewRef', bilibiliViewRef);
 
-// ==================== 导航 ====================
+// ==================== 窗口控制 ====================
 
-function goBack() {
-  router.push('/');
+const isMaximized = ref(false);
+
+async function minimizeWindow() {
+  const appWindow = getCurrentWindow();
+  await appWindow.minimize();
 }
 
-function goHome() {
-  router.push('/');
+async function toggleMaximize() {
+  const appWindow = getCurrentWindow();
+  if (await appWindow.isMaximized()) {
+    await appWindow.unmaximize();
+    isMaximized.value = false;
+  } else {
+    await appWindow.maximize();
+    isMaximized.value = true;
+  }
+}
+
+async function closeWindow() {
+  const appWindow = getCurrentWindow();
+  // 最小化到托盘而不是关闭
+  await appWindow.hide();
 }
 
 // ==================== 生命周期 ====================
@@ -228,88 +226,97 @@ userStore.$subscribe((_mutation, state) => {
 
 <template>
   <div class="app-layout">
-    <!-- 顶部导航栏 -->
+    <!-- 顶部标题栏 -->
     <header class="app-header">
       <div class="header-left">
-        <!-- 返回按钮（仅在平台页面显示） -->
-        <el-button 
-          v-if="isInPlatform" 
-          class="back-btn" 
-          text 
-          @click="goBack"
-        >
-          <el-icon><Back /></el-icon>
-        </el-button>
-        
-        <div class="logo" @click="goHome" style="cursor: pointer;">
-          <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
             <path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.659.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906l-1.174 1.12zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773H5.333zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c0-.373.129-.689.386-.947.258-.257.574-.386.947-.386zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373z"/>
           </svg>
-          <span class="logo-text">
-            {{ currentPlatform?.name || '视频下载器' }}
-          </span>
+          <span class="logo-text">哔哩哔哩</span>
         </div>
       </div>
       
       <div class="header-right">
-        <!-- 设置按钮 -->
-        <el-button class="header-btn" size="small" @click="showSettings = true">
-          <el-icon><Setting /></el-icon>
-          <span>设置</span>
-        </el-button>
-        
-        <!-- 主题切换 -->
-        <el-button class="header-btn" size="small" @click="toggleTheme">
-          <el-icon><Moon v-if="!isDarkMode" /><Sunny v-else /></el-icon>
-          <span>{{ isDarkMode ? '浅色' : '深色' }}</span>
-        </el-button>
-        
-        <!-- 下载中心按钮（仅在平台页面显示） -->
-        <el-badge 
-          v-if="isInPlatform"
-          :value="getDownloadingCount()" 
-          :hidden="getDownloadingCount() === 0" 
-          class="download-badge"
-        >
-          <el-button class="header-btn" size="small" @click="showDownloadCenter = true">
-            <el-icon><Download /></el-icon>
-            <span>下载</span>
-          </el-button>
-        </el-badge>
-        
-        <template v-if="userInfo">
-          <el-dropdown trigger="click">
-            <div class="user-info">
-              <el-avatar :src="userInfo.face" :size="32" />
-              <span class="username">{{ userInfo.username }}</span>
-            </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item @click="handleLogout">
-                  <el-icon><Close /></el-icon>
-                  退出登录
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-        <template v-else>
-          <el-button class="login-btn" size="small" @click="openLoginDialog">
-            登录
-          </el-button>
-        </template>
+        <!-- 窗口控制按钮 -->
+        <div class="window-controls">
+          <button class="window-btn" @click="minimizeWindow" title="最小化">
+            <el-icon><Minus /></el-icon>
+          </button>
+          <button class="window-btn" @click="toggleMaximize" :title="isMaximized ? '还原' : '最大化'">
+            <el-icon><FullScreen /></el-icon>
+          </button>
+          <button class="window-btn close-btn" @click="closeWindow" title="最小化到托盘">
+            <el-icon><CloseBold /></el-icon>
+          </button>
+        </div>
       </div>
     </header>
 
-    <!-- 路由内容 -->
-    <main class="app-main">
-      <router-view v-slot="{ Component }">
-        <component 
-          :is="Component" 
-          :ref="(el: any) => { if (route.name === 'Bilibili') bilibiliViewRef = el; }"
-        />
-      </router-view>
-    </main>
+    <!-- 主体内容区 -->
+    <div class="app-body">
+      <!-- 左侧边栏 -->
+      <aside class="app-sidebar">
+        <div class="sidebar-bottom">
+          <!-- 下载中心 -->
+          <el-tooltip content="下载中心" placement="right">
+            <el-badge 
+              :value="getDownloadingCount()" 
+              :hidden="getDownloadingCount() === 0" 
+              class="sidebar-badge"
+            >
+              <button class="sidebar-btn" @click="showDownloadCenter = true">
+                <el-icon :size="20"><Download /></el-icon>
+              </button>
+            </el-badge>
+          </el-tooltip>
+          
+          <!-- 主题切换 -->
+          <el-tooltip :content="isDarkMode ? '切换浅色' : '切换深色'" placement="right">
+            <button class="sidebar-btn" @click="toggleTheme">
+              <el-icon :size="20"><Moon v-if="!isDarkMode" /><Sunny v-else /></el-icon>
+            </button>
+          </el-tooltip>
+          
+          <!-- 设置 -->
+          <el-tooltip content="设置" placement="right">
+            <button class="sidebar-btn" @click="showSettings = true">
+              <el-icon :size="20"><Setting /></el-icon>
+            </button>
+          </el-tooltip>
+          
+          <!-- 用户头像 -->
+          <el-tooltip :content="userInfo ? userInfo.username : '点击登录'" placement="right">
+            <el-dropdown v-if="userInfo" trigger="click" placement="right-end">
+              <button class="sidebar-btn user-btn">
+                <el-avatar :src="userInfo.face" :size="28" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item @click="handleLogout">
+                    <el-icon><Close /></el-icon>
+                    退出登录
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <button v-else class="sidebar-btn" @click="openLoginDialog">
+              <el-icon :size="20"><User /></el-icon>
+            </button>
+          </el-tooltip>
+        </div>
+      </aside>
+
+      <!-- 路由内容 -->
+      <main class="app-main">
+        <router-view v-slot="{ Component }">
+          <component 
+            :is="Component" 
+            ref="bilibiliViewRef"
+          />
+        </router-view>
+      </main>
+    </div>
 
     <!-- 设置抽屉 -->
     <el-drawer
@@ -335,12 +342,13 @@ userStore.$subscribe((_mutation, state) => {
   background: var(--bg-primary);
 }
 
+/* 顶部标题栏 */
 .app-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 56px;
-  padding: 0 16px;
+  height: 40px;
+  padding: 0 8px 0 16px;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
@@ -350,90 +358,116 @@ userStore.$subscribe((_mutation, state) => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-}
-
-.back-btn {
-  padding: 8px;
-  color: var(--text-secondary);
-}
-
-.back-btn:hover {
-  color: var(--primary-color);
 }
 
 .logo {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--primary-color);
+  color: #fb7299;
 }
 
 .logo-text {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #fb7299;
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
   -webkit-app-region: no-drag;
 }
 
-.header-btn {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-  border: none;
+/* 窗口控制按钮 */
+.window-controls {
   display: flex;
   align-items: center;
+  gap: 0;
+}
+
+.window-btn {
+  width: 46px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.window-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.window-btn.close-btn:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* 主体区域 */
+.app-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 左侧边栏 */
+.app-sidebar {
+  width: 48px;
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0 12px;
   gap: 4px;
 }
 
-.header-btn:hover {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-
-.download-badge {
-  margin-left: 4px;
-}
-
-.user-info {
+.sidebar-btn {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 8px;
-  transition: background-color 0.2s;
-}
-
-.user-info:hover {
-  background: var(--bg-hover);
-}
-
-.username {
-  font-size: 14px;
-  color: var(--text-primary);
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.login-btn {
-  background: var(--primary-color);
-  color: #fff;
+  justify-content: center;
   border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.15s;
 }
 
-.login-btn:hover {
-  background: var(--primary-hover);
+.sidebar-btn:hover {
+  background: var(--bg-hover);
+  color: #fb7299;
 }
 
+.sidebar-btn.user-btn {
+  padding: 0;
+}
+
+.sidebar-badge {
+  display: flex;
+}
+
+.sidebar-badge :deep(.el-badge__content) {
+  top: 4px;
+  right: 8px;
+}
+
+/* 主内容区 */
 .app-main {
   flex: 1;
   overflow: hidden;

@@ -110,6 +110,7 @@ export interface DownloadInfo {
   entryIndex: number | null;
   entryTitle: string | null;
   expectedId: string | null;
+  audioOnly?: boolean;
 }
 
 // 下载进度详情

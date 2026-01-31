@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import type { DownloadTask, ProgressDetail, UserSettings } from '@/types';
 
 export function useDownloadTasks(settings: { value: UserSettings }) {
@@ -186,9 +187,14 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     groupTask.progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
     
     // 更新组任务状态
+    const wasNotCompleted = groupTask.status !== 'completed';
     if (completedCount === totalCount) {
       groupTask.status = 'completed';
       groupTask.completedAt = Date.now();
+      // 组任务全部完成时发送通知
+      if (wasNotCompleted) {
+        sendDownloadNotification('B站视频下载完成', `${groupTask.title} (${totalCount}个视频)`);
+      }
     } else if (failedCount === totalCount) {
       groupTask.status = 'failed';
     } else if (downloadingCount > 0) {
@@ -207,6 +213,26 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     }
   }
 
+  // 发送系统通知
+  async function sendDownloadNotification(title: string, body: string) {
+    try {
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        const permission = await requestPermission();
+        granted = permission === 'granted';
+      }
+      if (granted) {
+        sendNotification({ 
+          title, 
+          body,
+          sound: 'Default', // Windows 通知声音
+        });
+      }
+    } catch (error) {
+      console.debug('发送通知失败:', error);
+    }
+  }
+
   // 更新任务状态
   function updateTaskStatus(taskId: string, status: 'completed' | 'failed', error?: string) {
     const task = downloadTasks.value.find(t => t.id === taskId);
@@ -218,6 +244,11 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
       if (status === 'completed') {
         task.progress = 100;
         task.retryCount = 0;
+        
+        // 发送下载完成通知（仅单独任务，组任务在全部完成时通知）
+        if (!task.groupId) {
+          sendDownloadNotification('B站视频下载完成', task.title);
+        }
       }
       
       if (task.groupId) {
@@ -300,6 +331,7 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
         taskId: taskId,
         aria2cConnections: settings.value.aria2cConnections,
         preferCodec: settings.value.preferCodec || null,
+        audioOnly: info.audioOnly || false,
       });
 
       const currentTask = downloadTasks.value.find(t => t.id === taskId);

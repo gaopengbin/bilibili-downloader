@@ -46,7 +46,7 @@
         
         <div v-if="videoInfo.formats.length > 0" class="quality-selector">
           <span class="label">清晰度</span>
-          <el-radio-group :model-value="selectedQuality" @update:model-value="$emit('update:selectedQuality', $event)" size="small">
+          <el-radio-group :model-value="selectedQuality" @update:model-value="$emit('update:selectedQuality', $event)" size="small" :disabled="audioOnly">
             <el-radio-button
               v-for="format in videoInfo.formats"
               :key="format.format_id"
@@ -55,6 +55,12 @@
               {{ format.height }}p
             </el-radio-button>
           </el-radio-group>
+        </div>
+        
+        <div class="audio-only-option">
+          <el-checkbox :model-value="audioOnly" @update:model-value="$emit('update:audioOnly', $event)">
+            <span class="audio-label">仅下载音频 (MP3)</span>
+          </el-checkbox>
         </div>
 
         <!-- 分P选择（仅当没有合集时显示） -->
@@ -225,6 +231,7 @@ defineProps<{
   loading: boolean;
   outputDir: string;
   selectedQuality: string;
+  audioOnly: boolean;
   selectedEntries: number[];
   selectedSeasonEpisodes: string[];
   expandedSeasonItems: Set<string>;
@@ -241,6 +248,7 @@ defineProps<{
 
 defineEmits<{
   (e: 'update:selectedQuality', value: string): void;
+  (e: 'update:audioOnly', value: boolean): void;
   (e: 'update:selectedEntries', value: number[]): void;
   (e: 'update:descExpanded', value: boolean): void;
   (e: 'toggle-select-all'): void;
@@ -384,6 +392,15 @@ defineEmits<{
 }
 
 .quality-selector .label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.audio-only-option {
+  margin-bottom: 16px;
+}
+
+.audio-label {
   font-size: 13px;
   color: var(--text-secondary);
 }
