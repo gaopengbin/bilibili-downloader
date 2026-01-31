@@ -120,6 +120,7 @@ async function closeWindow() {
 
 onMounted(async () => {
   initTheme();
+  appStore.initVersion(); // 从 Tauri 获取版本号
   
   const splashStart = Date.now();
   const minSplashTime = 3000; // 开屏动画至少显示3秒
