@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { getVersion } from '@tauri-apps/api/app';
 import type { UserSettings } from '@/types';
 import { defaultSettings } from '@/types';
 
@@ -58,7 +59,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // ==================== 更新 ====================
-  const currentVersion = '0.11.0';
+  const currentVersion = ref('0.0.0'); // 将从 Tauri 动态获取
   const isCheckingUpdate = ref(false);
   const isDownloadingUpdate = ref(false);
   const updateDownloadProgress = ref(0);
@@ -69,6 +70,16 @@ export const useAppStore = defineStore('app', () => {
     url: string;
     downloadUrl?: string;
   } | null>(null);
+
+  // 初始化版本号（从 tauri.conf.json 获取）
+  async function initVersion() {
+    try {
+      currentVersion.value = await getVersion();
+    } catch (error) {
+      console.error('获取版本号失败:', error);
+      currentVersion.value = '0.0.0';
+    }
+  }
 
   // 版本号比较 (返回 1: a > b, -1: a < b, 0: a == b)
   function compareVersions(a: string, b: string): number {
@@ -124,7 +135,7 @@ export const useAppStore = defineStore('app', () => {
       const data = await response.json();
       const latestVersion = data.tag_name.replace(/^v/, '');
       
-      if (compareVersions(latestVersion, currentVersion) > 0) {
+      if (compareVersions(latestVersion, currentVersion.value) > 0) {
         const assets = data.assets || [];
         const setupAsset = assets.find((a: { name: string }) => 
           a.name.endsWith('_setup.exe') || a.name.endsWith('-setup.exe')
@@ -153,6 +164,7 @@ export const useAppStore = defineStore('app', () => {
   function init() {
     initTheme();
     loadSettings();
+    initVersion(); // 从 Tauri 获取版本号
   }
 
   return {
@@ -185,6 +197,7 @@ export const useAppStore = defineStore('app', () => {
     keyUpdates,
     checkForUpdate,
     compareVersions,
+    initVersion,
     
     // 初始化
     init,
