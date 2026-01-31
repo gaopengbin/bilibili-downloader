@@ -28,6 +28,11 @@ src-tauri/target/
 
 # Build artifacts
 *.exe
+
+# Test files
+*.part
+*.ytdl
+test_*.mp4*
 *.msi
 
 # Test files
