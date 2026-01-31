@@ -183,6 +183,59 @@ npm run tauri dev
 npm run tauri build
 ```
 
+### 类型检查
+
+```bash
+npx vue-tsc --noEmit
+```
+
+</details>
+
+---
+
+## 🚀 发布流程
+
+<details>
+<summary>点击展开发布说明</summary>
+
+### 1️⃣ 更新版本号
+
+需要同步修改以下文件中的版本号：
+
+| 文件 | 位置 |
+|------|------|
+| `src-tauri/tauri.conf.json` | `"version": "x.x.x"` |
+| `src-tauri/Cargo.toml` | `version = "x.x.x"` |
+| `src/stores/app.ts` | `currentVersion` 常量 |
+
+### 2️⃣ 更新发布说明
+
+编辑 `RELEASE_NOTES.md`，写入本次版本的更新内容。
+
+### 3️⃣ 提交代码并创建 Tag
+
+```bash
+git add .
+git commit -m "release: vx.x.x"
+git tag vx.x.x
+git push origin main --tags
+```
+
+### 4️⃣ 自动构建发布
+
+推送 tag 后，GitHub Actions 会自动：
+
+1. 下载最新的 yt-dlp.exe、ffmpeg.exe、aria2c.exe
+2. 执行 `npm run tauri build` 构建
+3. 生成两个安装包：
+   - `bilibili-downloader_x.x.x_x64_portable.zip` (便携版)
+   - `bilibili-downloader_x.x.x-setup.exe` (NSIS 安装包)
+4. 创建 GitHub Release，附带 RELEASE_NOTES.md 内容
+
+### 5️⃣ 发布完成
+
+用户可以从 GitHub Releases 页面下载新版本，应用内也会检测到更新提示。
+
 </details>
 
 ---

@@ -4,18 +4,9 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'Home',
-    component: () => import('@/views/Home.vue'),
-    meta: {
-      title: '首页',
-    },
-  },
-  {
-    path: '/bilibili',
-    name: 'Bilibili',
     component: () => import('@/views/BilibiliView.vue'),
     meta: {
-      title: '哔哩哔哩',
-      platform: 'bilibili',
+      title: 'B站视频下载器',
     },
   },
 ];

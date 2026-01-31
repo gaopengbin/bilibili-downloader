@@ -34,6 +34,7 @@ declare module 'vue' {
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElTag: typeof import('element-plus/es')['ElTag']
+    ElTooltip: typeof import('element-plus/es')['ElTooltip']
     FavoritesPanel: typeof import('./src/components/bilibili/FavoritesPanel.vue')['default']
     HistoryPanel: typeof import('./src/components/bilibili/HistoryPanel.vue')['default']
     LoginDialog: typeof import('./src/components/bilibili/LoginDialog.vue')['default']

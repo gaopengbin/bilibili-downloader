@@ -2,8 +2,10 @@
 import { ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from '@tauri-apps/plugin-dialog';
-import { ElMessage } from 'element-plus';
+import { readText } from '@tauri-apps/plugin-clipboard-manager';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { 
   Search, VideoPlay, Clock, Star, Link
 } from '@element-plus/icons-vue';
@@ -73,6 +75,7 @@ const searchKeyword = ref('');
 const videoUrl = ref('');
 const videoInfo = ref<VideoInfo | null>(null);
 const selectedQuality = ref('');
+const audioOnly = ref(false);
 const outputDir = ref('');
 const loading = ref(false);
 
@@ -120,6 +123,9 @@ const isDragging = ref(false);
 // 简介折叠
 const descExpanded = ref(false);
 
+// 剪贴板记录（避免重复解析）
+const lastClipboardUrl = ref('');
+
 // ==================== 计算属性 ====================
 
 // 检查是否是当前视频（用于合集列表高亮）
@@ -152,6 +158,68 @@ function loadSettings() {
 // 监听事件的清理函数
 let unlistenProgress: (() => void) | null = null;
 let unlistenDetailProgress: (() => void) | null = null;
+let unlistenFocus: (() => void) | null = null;
+
+// ==================== 剪贴板自动解析 ====================
+
+// 检测是否是B站链接
+function isBilibiliUrl(text: string): boolean {
+  if (!text) return false;
+  const patterns = [
+    /bilibili\.com\/video\//i,
+    /bilibili\.com\/bangumi\/play\//i,
+    /b23\.tv\//i,
+    /^BV[a-zA-Z0-9]+$/i,
+    /^av\d+$/i,
+    /^ep\d+$/i,
+    /^ss\d+$/i,
+  ];
+  return patterns.some(p => p.test(text.trim()));
+}
+
+// 检查剪贴板并提示用户
+async function checkClipboardAndParse() {
+  try {
+    const text = await readText();
+    if (!text) return;
+    
+    const trimmed = text.trim();
+    // 如果和上次相同，不重复提示
+    if (trimmed === lastClipboardUrl.value) return;
+    // 如果已经和当前输入框相同，不重复提示
+    if (trimmed === videoUrl.value) return;
+    // 如果正在加载，不处理
+    if (loading.value) return;
+    
+    if (isBilibiliUrl(trimmed)) {
+      lastClipboardUrl.value = trimmed;
+      
+      // 截取显示的链接（太长时省略）
+      const displayUrl = trimmed.length > 50 ? trimmed.substring(0, 50) + '...' : trimmed;
+      
+      // 弹出确认框
+      ElMessageBox.confirm(
+        `检测到B站链接：\n${displayUrl}`,
+        '剪贴板检测',
+        {
+          confirmButtonText: '解析',
+          cancelButtonText: '忽略',
+          type: 'info',
+        }
+      ).then(() => {
+        // 用户确认，切换到链接页并解析
+        activeTab.value = 'link';
+        videoUrl.value = trimmed;
+        parseVideo(trimmed);
+      }).catch(() => {
+        // 用户忽略，不做任何操作
+      });
+    }
+  } catch (error) {
+    // 剪贴板读取失败，静默忽略
+    console.debug('剪贴板读取失败:', error);
+  }
+}
 
 onMounted(async () => {
   loadSettings(); // 加载用户设置
@@ -176,6 +244,17 @@ onMounted(async () => {
     handleProgressUpdate(event.payload);
   });
   unlistenDetailProgress = unlisten2;
+  
+  // 监听窗口获得焦点事件，自动检测剪贴板
+  const appWindow = getCurrentWindow();
+  unlistenFocus = await appWindow.onFocusChanged(({ payload: focused }) => {
+    if (focused) {
+      checkClipboardAndParse();
+    }
+  });
+  
+  // 初始检查一次剪贴板
+  checkClipboardAndParse();
 });
 
 onUnmounted(() => {
@@ -186,6 +265,7 @@ onUnmounted(() => {
   // 移除进度监听
   if (unlistenProgress) unlistenProgress();
   if (unlistenDetailProgress) unlistenDetailProgress();
+  if (unlistenFocus) unlistenFocus();
 });
 
 // ==================== 可拖动分栏 ====================
@@ -426,12 +506,13 @@ async function startDownload() {
           outputDir: outputDir.value,
           tempDir: tempDir,
           finalDir: finalDir,
-          quality: selectedQuality.value || null,
+          quality: audioOnly.value ? null : (selectedQuality.value || null),
           videoTitle: videoInfo.value.title,
           isPlaylistItem: true,
           entryIndex: entry.index,
           entryTitle: entry.title,
           expectedId: entry.id || null,
+          audioOnly: audioOnly.value,
         },
         groupId
       );
@@ -457,12 +538,13 @@ async function startDownload() {
         outputDir: outputDir.value,
         tempDir: null,
         finalDir: null,
-        quality: selectedQuality.value || null,
+        quality: audioOnly.value ? null : (selectedQuality.value || null),
         videoTitle: videoInfo.value.title,
         isPlaylistItem: false,
         entryIndex: null,
         entryTitle: null,
         expectedId: null,
+        audioOnly: audioOnly.value,
       }
     );
     
@@ -767,12 +849,13 @@ async function downloadSeason() {
             outputDir: outputDir.value,
             tempDir: taskTempDir,
             finalDir: finalDir,
-            quality: selectedQuality.value || null,
+            quality: audioOnly.value ? null : (selectedQuality.value || null),
             videoTitle: season.title,
             isPlaylistItem: true,
             entryIndex: epIdx * 100 + entryIndex,
             entryTitle: fileTitle,
             expectedId: `${ep.bvid}_${entry.id?.split('_')[1] || entryIndex}`,
+            audioOnly: audioOnly.value,
           },
           groupId
         );
@@ -806,12 +889,13 @@ async function downloadSeason() {
           outputDir: outputDir.value,
           tempDir: taskTempDir,
           finalDir: finalDir,
-          quality: selectedQuality.value || null,
+          quality: audioOnly.value ? null : (selectedQuality.value || null),
           videoTitle: season.title,
           isPlaylistItem: true,
           entryIndex: epIdx,
           entryTitle: fileTitle,
           expectedId: ep.bvid,
+          audioOnly: audioOnly.value,
         },
         groupId
       );
@@ -1009,7 +1093,7 @@ defineExpose({
             @click="activeTab = 'link'"
           >
             <el-icon><Link /></el-icon>
-            <span>链接</span>
+            <span>解析</span>
           </div>
           <div 
             class="tab-item" 
@@ -1150,6 +1234,7 @@ defineExpose({
           :loading="loading"
           :output-dir="outputDir"
           :selected-quality="selectedQuality"
+          :audio-only="audioOnly"
           :selected-entries="selectedEntries"
           :selected-season-episodes="selectedSeasonEpisodes"
           :expanded-season-items="expandedSeasonItems"
@@ -1163,6 +1248,7 @@ defineExpose({
           :get-season-item-selected-count="getSeasonItemSelectedCount"
           :format-duration="formatDuration"
           @update:selected-quality="selectedQuality = $event"
+          @update:audio-only="audioOnly = $event"
           @update:selected-entries="selectedEntries = $event"
           @update:desc-expanded="descExpanded = $event"
           @toggle-select-all="toggleSelectAll"

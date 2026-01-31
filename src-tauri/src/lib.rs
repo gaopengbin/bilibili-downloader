@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::menu::{Menu, MenuItem};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -1317,13 +1319,13 @@ async fn get_bangumi_info(
         });
     }
 
-    // 获取可用清晰度（从第一集）
+    // 获取可用清晰度（从第一集，使用番剧专用 API）
     let formats = if let Some(eps) = episodes {
         if let Some(first_ep) = eps.first() {
-            let bvid = first_ep["bvid"].as_str().unwrap_or("");
+            let ep_id = first_ep["id"].as_u64().unwrap_or(0);
             let cid = first_ep["cid"].as_u64().unwrap_or(0);
-            if !bvid.is_empty() && cid > 0 {
-                fetch_available_formats(bvid, cid, cookies).await.unwrap_or_default()
+            if ep_id > 0 && cid > 0 {
+                fetch_bangumi_formats(ep_id, cid, cookies).await.unwrap_or_default()
             } else {
                 Vec::new()
             }
@@ -1434,9 +1436,30 @@ async fn fetch_available_formats(bvid: &str, cid: u64, cookies: &Option<String>)
         "https://api.bilibili.com/x/player/playurl?bvid={}&cid={}&qn=127&fnval=16&fourk=1",
         bvid, cid
     );
+    
+    fetch_formats_from_api(&api_url, "data", cookies).await
+}
+
+// 获取番剧清晰度
+async fn fetch_bangumi_formats(ep_id: u64, cid: u64, cookies: &Option<String>) -> Option<Vec<VideoFormat>> {
+    if ep_id == 0 || cid == 0 {
+        return None;
+    }
+    
+    // 番剧使用 PGC playurl API
+    let api_url = format!(
+        "https://api.bilibili.com/pgc/player/web/playurl?ep_id={}&cid={}&qn=127&fnval=16&fourk=1",
+        ep_id, cid
+    );
+    
+    fetch_formats_from_api(&api_url, "result", cookies).await
+}
+
+// 通用格式获取函数
+async fn fetch_formats_from_api(api_url: &str, data_key: &str, cookies: &Option<String>) -> Option<Vec<VideoFormat>> {
 
     let client = reqwest::Client::new();
-    let mut req = client.get(&api_url)
+    let mut req = client.get(api_url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .header("Referer", "https://www.bilibili.com/")
         .header("Accept", "application/json, text/plain, */*")
@@ -1454,13 +1477,16 @@ async fn fetch_available_formats(bvid: &str, cid: u64, cookies: &Option<String>)
         return None;
     }
 
+    // 获取数据节点（普通视频是 data，番剧是 result）
+    let data = &json[data_key];
+    
     // 获取当前权限下可用的最高清晰度
     // B站返回的 quality 字段表示当前用户权限下实际可播放的最高清晰度
-    let max_available_qn = json["data"]["quality"].as_u64().unwrap_or(64) as u32;
+    let max_available_qn = data["quality"].as_u64().unwrap_or(64) as u32;
     
     let mut formats = Vec::new();
     
-    if let Some(support_formats) = json["data"]["support_formats"].as_array() {
+    if let Some(support_formats) = data["support_formats"].as_array() {
         for fmt in support_formats {
             let qn_val = fmt["quality"].as_u64().unwrap_or(0) as u32;
             
@@ -1522,6 +1548,7 @@ async fn download_video(
     task_id: Option<String>,       // 任务ID，用于进度追踪
     aria2c_connections: Option<u32>, // aria2c 并发连接数
     prefer_codec: Option<String>,  // 编码偏好: avc / hevc / av1
+    audio_only: Option<bool>,      // 仅下载音频 (MP3)
 ) -> Result<ApiResponse<String>, String> {
     let ytdlp_path = get_ytdlp_path(&app_handle)?;
     let is_multi_p = is_playlist_item.unwrap_or(false);
@@ -1621,6 +1648,8 @@ async fn download_video(
         init_embedded_resources()?.join("aria2c.exe")
     };
 
+    let is_audio_only = audio_only.unwrap_or(false);
+    
     let mut args = vec![
         "-P".to_string(),
         actual_output_dir.clone(),
@@ -1644,11 +1673,6 @@ async fn download_video(
         "download:PROGRESS:%(progress._percent_str)s:%(info.ext)s:%(progress._speed_str)s:%(progress._downloaded_bytes_str)s:%(progress._total_bytes_str)s".to_string(),
         "--progress-template".to_string(),
         "postprocess:POSTPROCESS:%(info.ext)s".to_string(),
-        "--merge-output-format".to_string(),
-        "mp4".to_string(),
-        // 确保音视频都下载完成后再合并
-        "--postprocessor-args".to_string(),
-        "ffmpeg:-y".to_string(), // 强制覆盖，避免合并失败
         "--no-check-certificate".to_string(),
         "--windows-filenames".to_string(),
         "--restrict-filenames".to_string(), // 限制文件名只包含ASCII字符
@@ -1679,37 +1703,55 @@ async fn download_video(
         "Sec-Fetch-Site:same-origin".to_string(),
     ];
 
-    // 构建格式选择字符串，考虑画质和编码偏好
-    let codec_filter = match prefer_codec.as_deref() {
-        Some("avc") => "[vcodec^=avc]",
-        Some("hevc") => "[vcodec^=hev]",
-        Some("av1") => "[vcodec^=av01]",
-        _ => "",
-    };
-
-    if let Some(q) = quality {
+    // 音频模式与视频模式的参数差异
+    if is_audio_only {
+        // 音频模式：提取音频并转换为 MP3
+        args.push("-x".to_string());  // 提取音频
+        args.push("--audio-format".to_string());
+        args.push("mp3".to_string());
+        args.push("--audio-quality".to_string());
+        args.push("0".to_string());  // 最高音质
         args.push("-f".to_string());
-        if codec_filter.is_empty() {
-            args.push(format!(
-                "bestvideo[height<={}]+bestaudio/best[height<={}]/best",
-                q, q
-            ));
-        } else {
-            // 有编码偏好时，优先选择指定编码，fallback 到任意编码
-            args.push(format!(
-                "bestvideo[height<={}]{}+bestaudio/bestvideo[height<={}]+bestaudio/best[height<={}]/best",
-                q, codec_filter, q, q
-            ));
-        }
+        args.push("bestaudio/best".to_string());
     } else {
-        args.push("-f".to_string());
-        if codec_filter.is_empty() {
-            args.push("bestvideo+bestaudio/best".to_string());
+        // 视频模式：合并输出为 MP4
+        args.push("--merge-output-format".to_string());
+        args.push("mp4".to_string());
+        args.push("--postprocessor-args".to_string());
+        args.push("ffmpeg:-y".to_string()); // 强制覆盖，避免合并失败
+        
+        // 构建格式选择字符串，考虑画质和编码偏好
+        let codec_filter = match prefer_codec.as_deref() {
+            Some("avc") => "[vcodec^=avc]",
+            Some("hevc") => "[vcodec^=hev]",
+            Some("av1") => "[vcodec^=av01]",
+            _ => "",
+        };
+
+        if let Some(q) = quality {
+            args.push("-f".to_string());
+            if codec_filter.is_empty() {
+                args.push(format!(
+                    "bestvideo[height<={}]+bestaudio/best[height<={}]/best",
+                    q, q
+                ));
+            } else {
+                // 有编码偏好时，优先选择指定编码，fallback 到任意编码
+                args.push(format!(
+                    "bestvideo[height<={}]{}+bestaudio/bestvideo[height<={}]+bestaudio/best[height<={}]/best",
+                    q, codec_filter, q, q
+                ));
+            }
         } else {
-            args.push(format!(
-                "bestvideo{}+bestaudio/bestvideo+bestaudio/best",
-                codec_filter
-            ));
+            args.push("-f".to_string());
+            if codec_filter.is_empty() {
+                args.push("bestvideo+bestaudio/best".to_string());
+            } else {
+                args.push(format!(
+                    "bestvideo{}+bestaudio/bestvideo+bestaudio/best",
+                    codec_filter
+                ));
+            }
         }
     }
 
@@ -2012,6 +2054,11 @@ async fn download_video(
     // 等待一小段时间确保文件系统同步（特别是合并操作后）
     std::thread::sleep(std::time::Duration::from_millis(500));
 
+    // 根据模式确定文件扩展名
+    let target_ext = if is_audio_only { "mp3" } else { "mp4" };
+    // 音频文件最小大小要求较低
+    let min_file_size: u64 = if is_audio_only { 10 * 1024 } else { 100 * 1024 }; // 10KB for mp3, 100KB for mp4
+    
     // 查找下载的文件（无论成功与否都尝试查找）
     let mut downloaded_file: Option<std::path::PathBuf> = None;
     
@@ -2033,11 +2080,11 @@ async fn download_video(
         
         for try_id in possible_ids {
             if try_id.is_empty() { continue; }
-            let candidate = std::path::Path::new(&actual_output_dir).join(format!("{}.mp4", try_id));
+            let candidate = std::path::Path::new(&actual_output_dir).join(format!("{}.{}", try_id, target_ext));
             if candidate.exists() {
-                // 验证文件不是空的或损坏的（至少 100KB）
+                // 验证文件不是空的或损坏的
                 if let Ok(meta) = candidate.metadata() {
-                    if meta.len() > 100 * 1024 {
+                    if meta.len() > min_file_size {
                         downloaded_file = Some(candidate);
                         break;
                     }
@@ -2046,14 +2093,14 @@ async fn download_video(
         }
     }
 
-    // 策略2：如果是独立临时目录，直接找目录中唯一的完整 mp4
+    // 策略2：如果是独立临时目录，直接找目录中唯一的完整文件
     if downloaded_file.is_none() {
         if let Ok(entries) = fs::read_dir(&actual_output_dir) {
-            let mut mp4_files: Vec<std::path::PathBuf> = entries
+            let mut target_files: Vec<std::path::PathBuf> = entries
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
                 .filter(|p| {
-                    p.extension().map(|e| e.eq_ignore_ascii_case("mp4")).unwrap_or(false)
+                    p.extension().map(|e| e.eq_ignore_ascii_case(target_ext)).unwrap_or(false)
                 })
                 .filter(|p| {
                     // 排除临时流文件（包含 .f 后跟数字）
@@ -2064,41 +2111,41 @@ async fn download_video(
                             return false;
                         }
                     }
-                    // 文件大小至少 100KB
-                    p.metadata().ok().map(|m| m.len() > 100 * 1024).unwrap_or(false)
+                    // 文件大小最小要求
+                    p.metadata().ok().map(|m| m.len() > min_file_size).unwrap_or(false)
                 })
                 .collect();
             
-            // 按文件大小排序，取最大的（合并后的文件通常最大）
-            mp4_files.sort_by(|a, b| {
+            // 按文件大小排序，取最大的
+            target_files.sort_by(|a, b| {
                 let size_a = a.metadata().ok().map(|m| m.len()).unwrap_or(0);
                 let size_b = b.metadata().ok().map(|m| m.len()).unwrap_or(0);
                 size_b.cmp(&size_a)
             });
             
-            if let Some(largest) = mp4_files.first() {
+            if let Some(largest) = target_files.first() {
                 downloaded_file = Some(largest.clone());
             }
         }
     }
 
-    // 回退：扫描目录查找最近生成的完整 mp4（排除临时流文件）
+    // 回退：扫描目录查找最近生成的完整文件（排除临时流文件）
     if downloaded_file.is_none() {
         if let Ok(entries) = fs::read_dir(&actual_output_dir) {
             // 记录下载开始前的时间戳（用于过滤旧文件）
             let now = std::time::SystemTime::now();
             let five_minutes_ago = now - std::time::Duration::from_secs(300);
             
-            // 找到最近修改的 mp4，但排除临时流文件
+            // 找到最近修改的文件，但排除临时流文件
             let mut newest: Option<(std::time::SystemTime, std::path::PathBuf, u64)> = None;
             for entry in entries.filter_map(|e| e.ok()) {
                 let path = entry.path();
-                if path.extension().map(|e| e.eq_ignore_ascii_case("mp4")).unwrap_or(false) {
+                if path.extension().map(|e| e.eq_ignore_ascii_case(target_ext)).unwrap_or(false) {
                     let filename = path.file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("");
                     
-                    // 跳过临时流文件（包含 .f 后跟数字，如 BV123.f303.mp4）
+                    // 跳过临时流文件（包含 .f 后跟数字）
                     if filename.contains(".f") {
                         let parts: Vec<&str> = filename.rsplitn(2, ".f").collect();
                         if parts.len() == 2 && parts[0].chars().all(|c| c.is_ascii_digit()) {
@@ -2108,8 +2155,8 @@ async fn download_video(
                     
                     if let Ok(metadata) = path.metadata() {
                         let file_size = metadata.len();
-                        // 跳过小于 100KB 的文件（可能是损坏的）
-                        if file_size < 100 * 1024 {
+                        // 跳过小于最小要求的文件
+                        if file_size < min_file_size {
                             continue;
                         }
                         
@@ -2120,7 +2167,7 @@ async fn download_video(
                             }
                             
                             if let Some((best_time, _, best_size)) = &newest {
-                                // 优先选择更大的文件（合并后的文件通常比临时文件大）
+                                // 优先选择更大的文件
                                 // 如果大小相近，选择更新的
                                 if file_size > *best_size + 1024 * 1024 || 
                                    (file_size > *best_size - 1024 * 1024 && modified > *best_time) {
@@ -2158,8 +2205,8 @@ async fn download_video(
         }
     }
 
-    // 简单验证 MP4 文件：只检查文件头部是否有效
-    fn is_valid_mp4(path: &std::path::Path) -> bool {
+    // 简单验证文件：检查文件头部是否有效
+    fn is_valid_media_file(path: &std::path::Path, is_audio: bool) -> bool {
         use std::io::Read;
         let file = match fs::File::open(path) {
             Ok(f) => f,
@@ -2167,22 +2214,33 @@ async fn download_video(
         };
         let mut reader = std::io::BufReader::new(file);
         
-        // 检查文件头部是否是有效的 MP4 (ftyp box)
-        let mut header = [0u8; 12];
-        if reader.read_exact(&mut header).is_err() {
-            return false;
+        if is_audio {
+            // 检查 MP3 文件头 (ID3 或 同步字节)
+            let mut header = [0u8; 3];
+            if reader.read_exact(&mut header).is_err() {
+                return false;
+            }
+            // ID3 标签或 MP3 同步字节 0xFF 0xFB/0xFA/0xF3/0xF2
+            &header[..3] == b"ID3" || (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0)
+        } else {
+            // 检查文件头部是否是有效的 MP4 (ftyp box)
+            let mut header = [0u8; 12];
+            if reader.read_exact(&mut header).is_err() {
+                return false;
+            }
+            // ftyp 标识应该在字节 4-7
+            &header[4..8] == b"ftyp"
         }
-        // ftyp 标识应该在字节 4-7
-        &header[4..8] == b"ftyp"
     }
 
-    // 判断成功：进程成功退出，并且找到了有效的 MP4 文件
+    // 判断成功：进程成功退出，并且找到了有效的文件
+    let min_success_size: u64 = if is_audio_only { 100 * 1024 } else { 1024 * 1024 }; // 100KB for mp3, 1MB for mp4
     let actually_success = status.success() && downloaded_file.is_some() && {
         downloaded_file.as_ref()
             .map(|p| {
-                // 文件大于 1MB 且头部是有效的 MP4
-                p.metadata().ok().map(|m| m.len() > 1024 * 1024).unwrap_or(false)
-                    && is_valid_mp4(p)
+                // 文件大于最小要求且头部有效
+                p.metadata().ok().map(|m| m.len() > min_success_size).unwrap_or(false)
+                    && is_valid_media_file(p, is_audio_only)
             })
             .unwrap_or(false)
     };
@@ -2194,14 +2252,14 @@ async fn download_video(
                 // 多P视频：有标题用标题，没有就用 Pxx
                 let idx = entry_index.unwrap_or(1);
                 if let Some(ref t) = safe_entry_title {
-                    format!("{}.mp4", t)
+                    format!("{}.{}", t, target_ext)
                 } else {
-                    format!("P{:02}.mp4", idx)
+                    format!("P{:02}.{}", idx, target_ext)
                 }
             } else {
                 // 单视频：用视频标题
                 if let Some(ref t) = safe_title {
-                    format!("{}.mp4", t)
+                    format!("{}.{}", t, target_ext)
                 } else {
                     String::new() // 不重命名
                 }
@@ -2595,6 +2653,47 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            // 创建托盘菜单
+            let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            
+            // 创建托盘图标
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .tooltip("B站视频下载器")
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // 双击托盘图标显示窗口
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+            
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             init_resources,
             close_splashscreen,
