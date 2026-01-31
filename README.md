@@ -206,7 +206,8 @@ npx vue-tsc --noEmit
 |------|------|
 | `src-tauri/tauri.conf.json` | `"version": "x.x.x"` |
 | `src-tauri/Cargo.toml` | `version = "x.x.x"` |
-| `src/stores/app.ts` | `currentVersion` 常量 |
+
+> 💡 前端会自动从 Tauri 获取版本号，无需手动修改
 
 ### 2️⃣ 更新发布说明
 
