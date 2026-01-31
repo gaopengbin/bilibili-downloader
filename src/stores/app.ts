@@ -58,7 +58,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // ==================== 更新 ====================
-  const currentVersion = '0.10.1';
+  const currentVersion = '0.11.0';
   const isCheckingUpdate = ref(false);
   const isDownloadingUpdate = ref(false);
   const updateDownloadProgress = ref(0);
