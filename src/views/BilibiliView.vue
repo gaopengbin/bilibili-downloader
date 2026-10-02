@@ -495,8 +495,6 @@ async function startDownload() {
     );
     
     // 多P视频：创建临时目录和最终目录
-    const timestamp = Date.now();
-    const tempDir = `${outputDir.value}\\temp_${timestamp}`;
     const finalDir = `${outputDir.value}\\${sanitizeFileName(videoInfo.value.title)}`;
     
     // 如果多于1个分P，创建组任务
@@ -513,20 +511,24 @@ async function startDownload() {
     }
     
     for (const entry of entriesToDownload) {
-      const downloadUrl = entry.url || `${videoUrl.value}?p=${entry.index}`;
+      const sourceUrl = entry.url || parsedVideoUrl.value;
+      const partUrl = new URL(/^https?:\/\//i.test(sourceUrl)
+        ? sourceUrl : `https://www.bilibili.com/video/${sourceUrl}`);
+      partUrl.searchParams.set('p', String(entry.index));
+      const downloadUrl = partUrl.toString();
       const task = createDownloadTask(
         entriesToDownload.length > 1 ? `P${entry.index}. ${entry.title}` : `${videoInfo.value.title} - P${entry.index}`,
         videoInfo.value.thumbnail,
         {
           url: downloadUrl,
           outputDir: outputDir.value,
-          tempDir: tempDir,
+          tempDir: null, // Assigned from the unique task ID at creation.
           finalDir: finalDir,
           quality: audioOnly.value ? null : (selectedQuality.value || null),
           videoTitle: videoInfo.value.title,
           isPlaylistItem: true,
           entryIndex: entry.index,
-          entryTitle: entry.title,
+          entryTitle: `P${String(entry.index).padStart(2, '0')}. ${entry.title}`,
           expectedId: entry.id || null,
           audioOnly: audioOnly.value,
         },
@@ -550,7 +552,7 @@ async function startDownload() {
       videoInfo.value.title,
       videoInfo.value.thumbnail,
       {
-        url: videoUrl.value,
+        url: parsedVideoUrl.value,
         outputDir: outputDir.value,
         tempDir: null,
         finalDir: null,
@@ -574,11 +576,10 @@ async function startDownload() {
 
 // 清理文件名中的非法字符
 function sanitizeFileName(name: string): string {
-  return name
-    .replace(/[\\/:*?"<>|]/g, '_')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .substring(0, 80);
+  const cleaned = name.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '_').replace(/^[ .]+|[ .]+$/g, '');
+  let safe = Array.from(cleaned).slice(0, 80).join('').replace(/[ .]+$/g, '');
+  if (/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i.test(safe)) safe = `_${safe}`;
+  return safe || 'video';
 }
 
 function toggleSelectAll() {

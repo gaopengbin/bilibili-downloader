@@ -58,6 +58,9 @@ jobs:
       - name: Build
         run: npm run tauri build
 
+      - name: Verify download regressions
+        run: cargo test --release --lib --manifest-path src-tauri/Cargo.toml
+
       - name: Get version
         id: version
         run: |

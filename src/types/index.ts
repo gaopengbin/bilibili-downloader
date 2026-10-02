@@ -84,6 +84,8 @@ export interface DownloadTask {
   createdAt: number;
   completedAt?: number;
   error?: string;
+  // Actual saved result, including the suffix used to avoid a name collision.
+  filePath?: string;
   // 恢复下载所需信息
   downloadInfo?: DownloadInfo;
   // 组任务支持

@@ -124,6 +124,9 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
       downloadInfo,
       groupId,
     };
+    if (task.downloadInfo) {
+      task.downloadInfo.tempDir = `${task.downloadInfo.outputDir}\\.bilibili-downloads\\${task.id}`;
+    }
     downloadTasks.value.unshift(task);
     return task;
   }
@@ -303,6 +306,8 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     
     const info = task.downloadInfo;
     const taskId = task.id;
+    // Migrate resumed tasks away from the legacy shared temporary directories.
+    info.tempDir = `${info.outputDir}\\.bilibili-downloads\\${taskId}`;
     
     if (!info.url || info.url === 'https://www.bilibili.com/video/' || info.url.endsWith('/video/')) {
       updateTaskStatus(taskId, 'failed', '下载链接无效，缺少视频ID');
@@ -317,7 +322,7 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     saveDownloadTasks();
     
     try {
-      const result = await invoke<{ success: boolean; error?: string }>('download_video', {
+      const result = await invoke<{ success: boolean; data?: string; error?: string }>('download_video', {
         url: info.url,
         outputDir: info.outputDir,
         tempDir: info.tempDir,
@@ -340,6 +345,8 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
       }
 
       if (result.success) {
+        task.filePath = result.data;
+        task.stage = '已完成';
         updateTaskStatus(taskId, 'completed');
         return true;
       } else {
@@ -438,9 +445,9 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
       targetTask.status = 'paused';
       saveDownloadTasks();
       
-      if (targetTask.id === currentTaskId.value) {
+      if (!targetTask.isGroup) {
         isPausing.value = true;
-        await invoke('cancel_download');
+        await invoke('cancel_download', { taskId: targetTask.id });
         isPausing.value = false;
       }
       ElMessage.info('下载已暂停');
@@ -479,7 +486,7 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     if (task.status === 'downloading') {
       isPausing.value = true;
       try {
-        await invoke('cancel_download');
+        await invoke('cancel_download', { taskId: task.id });
       } catch (e) {
         // 忽略错误
       }
@@ -528,7 +535,10 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     
     isPausing.value = true;
     try {
-      await invoke('cancel_download');
+      for (const child of activeChildren) {
+        child.status = 'paused';
+        await invoke('cancel_download', { taskId: child.id });
+      }
     } catch (e) {
       // 忽略错误
     }
@@ -574,15 +584,18 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     if (downloadingChildren.length > 0) {
       isPausing.value = true;
       try {
-        await invoke('cancel_download');
+        for (const child of downloadingChildren) {
+          await invoke('cancel_download', { taskId: child.id });
+        }
       } catch (e) {
         // 忽略错误
       }
       isPausing.value = false;
     }
     
-    const tempDir = childTasks[0]?.downloadInfo?.tempDir;
-    if (tempDir && groupTask.status !== 'completed') {
+    for (const child of childTasks) {
+      const tempDir = child.downloadInfo?.tempDir;
+      if (!tempDir || child.status === 'completed') continue;
       try {
         await invoke('delete_folder', { path: tempDir });
       } catch (e) {
@@ -625,7 +638,7 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     if (child.status === 'downloading') {
       isPausing.value = true;
       try {
-        await invoke('cancel_download');
+        await invoke('cancel_download', { taskId: child.id });
       } catch (e) {
         // 忽略错误
       }
@@ -817,7 +830,9 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     if (downloadingTasksList.length > 0) {
       isPausing.value = true;
       try {
-        await invoke('cancel_download');
+        for (const task of downloadingTasksList) {
+          await invoke('cancel_download', { taskId: task.id });
+        }
       } catch (e) {
         // 忽略错误
       }
@@ -911,6 +926,7 @@ export function useDownloadTasks(settings: { value: UserSettings }) {
     if (activeTasks.length === 0) return;
     
     isPausing.value = true;
+    for (const task of activeTasks) task.status = 'paused';
     try {
       await invoke('cancel_download');
     } catch (e) {

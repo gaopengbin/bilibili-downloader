@@ -84,8 +84,8 @@
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| 🚀 **便携版** | `bilibili-downloader_x64_portable.zip` | 解压即用，无需安装 |
-| 📦 **安装版** | `bilibili-downloader_x64-setup.exe` | 双击安装，自动创建快捷方式 |
+| 🚀 **便携版** | `bilibili-downloader_0.12.1_x64_portable.zip` | 解压即用，无需安装 |
+| 📦 **安装版** | `bilibili-downloader_0.12.1_x64-setup.exe` | 双击安装，自动创建快捷方式 |
 
 > 💡 **推荐使用便携版**，解压到任意目录即可使用，方便备份和迁移。
 

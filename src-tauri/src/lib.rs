@@ -3,6 +3,7 @@ pub mod models;
 pub mod utils;
 mod discovery;
 mod playback;
+mod download_files;
 // pub mod commands; // 待完全迁移后启用
 
 use base64::Engine;
@@ -247,7 +248,7 @@ struct AppState {
     cookies: Mutex<Option<HashMap<String, String>>>,
     cookies_file: Mutex<Option<String>>,
     // 当前下载进程 ID，用于暂停
-    current_download_pid: Mutex<Option<u32>>,
+    download_pids: Mutex<HashMap<String, u32>>,
 }
 
 // ==================== 工具函数 ====================
@@ -1554,7 +1555,9 @@ async fn download_video(
 ) -> Result<ApiResponse<String>, String> {
     let ytdlp_path = get_ytdlp_path(&app_handle)?;
     let is_multi_p = is_playlist_item.unwrap_or(false);
-    let task_id = task_id.unwrap_or_default();
+    let task_id = task_id.filter(|id| !id.is_empty()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    // Legacy shared temporary directories and guessed IDs no longer determine task ownership.
+    let _ = (temp_dir, expected_id);
     let connections = aria2c_connections.unwrap_or(16);
     
     // 处理 BV号/av号，转换为完整URL
@@ -1568,63 +1571,12 @@ async fn download_video(
         url.clone()
     };
     
-    // 清理文件名中的非法字符的辅助函数
-    fn sanitize_filename(name: &str) -> String {
-        // 替换非法字符
-        let mut s: String = name
-            .chars()
-            .map(|c| match c {
-                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-                // 控制字符
-                c if c as u32 <= 31 => '_',
-                _ => c,
-            })
-            .collect();
-        // 去掉首尾空格和点
-        while s.ends_with(' ') || s.ends_with('.') { s.pop(); }
-        while s.starts_with(' ') || s.starts_with('.') { s.remove(0); }
-        // 限长（按字符数而非字节数，避免在 UTF-8 多字节字符中间截断）
-        if s.chars().count() > 80 {
-            s = s.chars().take(80).collect();
-        }
-        // Windows保留名处理（不区分大小写）
-        let reserved = [
-            "CON","PRN","AUX","NUL","COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9",
-            "LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"
-        ];
-        let upper = s.to_uppercase();
-        if reserved.contains(&upper.as_str()) { s.push('_'); }
-        if s.is_empty() { s = "video".to_string(); }
-        s
-    }
-    
-    // 处理文件名
-    let safe_title = video_title.as_ref().map(|t| sanitize_filename(t));
-    let safe_entry_title = entry_title.as_ref().map(|t| sanitize_filename(t));
-    
-    // 多P视频使用临时目录下载
-    let actual_output_dir = if is_multi_p {
-        if let Some(ref temp) = temp_dir {
-            // 创建临时目录
-            let _ = fs::create_dir_all(temp);
-            temp.clone()
-        } else {
-            output_dir.clone()
-        }
-    } else {
-        output_dir.clone()
-    };
-    
-    // 同时创建最终目录（多P）
-    if is_multi_p {
-        if let Some(ref final_d) = final_dir {
-            let _ = fs::create_dir_all(final_d);
-        }
-    }
-    
-    // 使用简单的 ID 模板
-    let output_template = "%(id)s.%(ext)s".to_string();
-    
+    let working_dir = download_files::task_directory(std::path::Path::new(&output_dir), &task_id)?;
+    fs::create_dir_all(&working_dir).map_err(|e| format!("无法创建任务下载目录: {e}"))?;
+    let working_dir = fs::canonicalize(working_dir).map_err(|e| e.to_string())?;
+    let actual_output_dir = download_files::downloader_directory(&working_dir);
+    let output_template = "media.%(ext)s".to_string();
+
     // 获取 ffmpeg 路径
     let dev_ffmpeg = std::env::current_dir()
         .ok()
@@ -1664,8 +1616,6 @@ async fn download_video(
         // 编码设置 - 设置响应解码编码
         "--encoding".to_string(),
         "utf-8".to_string(),
-        // 忽略错误继续下载
-        "--ignore-errors".to_string(),
         // 使用 aria2c 作为外部下载器，支持多线程下载
         "--external-downloader".to_string(),
         aria2c_path.to_string_lossy().to_string(),
@@ -1705,6 +1655,7 @@ async fn download_video(
         "Sec-Fetch-Site:same-origin".to_string(),
     ];
 
+    args.extend(download_files::identity_arguments());
     // 音频模式与视频模式的参数差异
     if is_audio_only {
         // 音频模式：提取音频并转换为 MP3
@@ -1806,7 +1757,7 @@ async fn download_video(
     let pid = child.id();
     {
         let state = app_handle.state::<AppState>();
-        *state.current_download_pid.lock().unwrap() = Some(pid);
+        state.download_pids.lock().unwrap().insert(task_id.clone(), pid);
     }
 
     // 同时读取 stdout 和 stderr，避免管道阻塞
@@ -1926,11 +1877,18 @@ async fn download_video(
     let mut current_stage = 0;
     let mut stage_count = 0; // 计数器，用于检测阶段切换
     
+    let mut reported_files = Vec::new();
+    let mut result_path_error = None;
     if let Some(stdout) = stdout {
         use std::io::{BufRead, BufReader};
         let reader = BufReader::new(stdout);
 
         for line in reader.lines().map_while(Result::ok) {
+            match download_files::reported_path(&line) {
+                Ok(Some(path)) => { reported_files.push(path); continue; }
+                Err(error) => { result_path_error = Some(error); continue; }
+                Ok(None) => {}
+            }
             // aria2c 进度格式: [#xxxx 50MiB/100MiB(50%) CN:16 DL:10MiB]
             // 或者: [DL:10MiB][#xxxx 50%]
             if line.contains("DL:") && (line.contains("%)" ) || line.contains("%]")) {
@@ -2050,290 +2008,58 @@ async fn download_video(
     // 清除进程 ID
     {
         let state = app_handle.state::<AppState>();
-        *state.current_download_pid.lock().unwrap() = None;
+        state.download_pids.lock().unwrap().remove(&task_id);
     }
 
-    // 等待一小段时间确保文件系统同步（特别是合并操作后）
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    // 根据模式确定文件扩展名
-    let target_ext = if is_audio_only { "mp3" } else { "mp4" };
-    // 音频文件最小大小要求较低
-    let min_file_size: u64 = if is_audio_only { 10 * 1024 } else { 100 * 1024 }; // 10KB for mp3, 100KB for mp4
-    
-    // 查找下载的文件（无论成功与否都尝试查找）
-    let mut downloaded_file: Option<std::path::PathBuf> = None;
-    
-    // 策略1：优先精确匹配预期的文件名
-    if let Some(ref id) = expected_id {
-        // 尝试多种可能的文件名格式
-        let mut possible_ids = vec![id.clone()];
-        
-        // BVxxx_cid 格式 -> 尝试 BVxxx
-        if id.contains('_') {
-            if let Some(bv_part) = id.split('_').next() {
-                possible_ids.push(bv_part.to_string());
-            }
-        }
-        // ep87842 -> 87842
-        if id.starts_with("ep") {
-            possible_ids.push(id.trim_start_matches("ep").to_string());
-        }
-        
-        for try_id in possible_ids {
-            if try_id.is_empty() { continue; }
-            let candidate = std::path::Path::new(&actual_output_dir).join(format!("{}.{}", try_id, target_ext));
-            if candidate.exists() {
-                // 验证文件不是空的或损坏的
-                if let Ok(meta) = candidate.metadata() {
-                    if meta.len() > min_file_size {
-                        downloaded_file = Some(candidate);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // 策略2：如果是独立临时目录，直接找目录中唯一的完整文件
-    if downloaded_file.is_none() {
-        if let Ok(entries) = fs::read_dir(&actual_output_dir) {
-            let mut target_files: Vec<std::path::PathBuf> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| {
-                    p.extension().map(|e| e.eq_ignore_ascii_case(target_ext)).unwrap_or(false)
-                })
-                .filter(|p| {
-                    // 排除临时流文件（包含 .f 后跟数字）
-                    let filename = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                    if filename.contains(".f") {
-                        let parts: Vec<&str> = filename.rsplitn(2, ".f").collect();
-                        if parts.len() == 2 && parts[0].chars().all(|c| c.is_ascii_digit()) {
-                            return false;
-                        }
-                    }
-                    // 文件大小最小要求
-                    p.metadata().ok().map(|m| m.len() > min_file_size).unwrap_or(false)
-                })
-                .collect();
-            
-            // 按文件大小排序，取最大的
-            target_files.sort_by(|a, b| {
-                let size_a = a.metadata().ok().map(|m| m.len()).unwrap_or(0);
-                let size_b = b.metadata().ok().map(|m| m.len()).unwrap_or(0);
-                size_b.cmp(&size_a)
-            });
-            
-            if let Some(largest) = target_files.first() {
-                downloaded_file = Some(largest.clone());
-            }
-        }
-    }
-
-    // 回退：扫描目录查找最近生成的完整文件（排除临时流文件）
-    if downloaded_file.is_none() {
-        if let Ok(entries) = fs::read_dir(&actual_output_dir) {
-            // 记录下载开始前的时间戳（用于过滤旧文件）
-            let now = std::time::SystemTime::now();
-            let five_minutes_ago = now - std::time::Duration::from_secs(300);
-            
-            // 找到最近修改的文件，但排除临时流文件
-            let mut newest: Option<(std::time::SystemTime, std::path::PathBuf, u64)> = None;
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.extension().map(|e| e.eq_ignore_ascii_case(target_ext)).unwrap_or(false) {
-                    let filename = path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("");
-                    
-                    // 跳过临时流文件（包含 .f 后跟数字）
-                    if filename.contains(".f") {
-                        let parts: Vec<&str> = filename.rsplitn(2, ".f").collect();
-                        if parts.len() == 2 && parts[0].chars().all(|c| c.is_ascii_digit()) {
-                            continue;
-                        }
-                    }
-                    
-                    if let Ok(metadata) = path.metadata() {
-                        let file_size = metadata.len();
-                        // 跳过小于最小要求的文件
-                        if file_size < min_file_size {
-                            continue;
-                        }
-                        
-                        if let Ok(modified) = metadata.modified() {
-                            // 只考虑最近 5 分钟内修改的文件
-                            if modified < five_minutes_ago {
-                                continue;
-                            }
-                            
-                            if let Some((best_time, _, best_size)) = &newest {
-                                // 优先选择更大的文件
-                                // 如果大小相近，选择更新的
-                                if file_size > *best_size + 1024 * 1024 || 
-                                   (file_size > *best_size - 1024 * 1024 && modified > *best_time) {
-                                    newest = Some((modified, path, file_size));
-                                }
-                            } else {
-                                newest = Some((modified, path, file_size));
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some((_, p, _)) = newest { downloaded_file = Some(p); }
-        }
-    }
-
-    // 如果找到了文件，等待文件大小稳定（确保写入完成）
-    if let Some(ref path) = downloaded_file {
-        let mut last_size = 0u64;
-        let mut stable_count = 0;
-        for _ in 0..10 {  // 最多等待 5 秒
-            if let Ok(meta) = path.metadata() {
-                let current_size = meta.len();
-                if current_size == last_size && current_size > 0 {
-                    stable_count += 1;
-                    if stable_count >= 2 {
-                        break;  // 连续两次大小相同，文件稳定
-                    }
-                } else {
-                    stable_count = 0;
-                    last_size = current_size;
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-    }
-
-    // 简单验证文件：检查文件头部是否有效
-    fn is_valid_media_file(path: &std::path::Path, is_audio: bool) -> bool {
-        use std::io::Read;
-        let file = match fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => return false,
-        };
-        let mut reader = std::io::BufReader::new(file);
-        
-        if is_audio {
-            // 检查 MP3 文件头 (ID3 或 同步字节)
-            let mut header = [0u8; 3];
-            if reader.read_exact(&mut header).is_err() {
-                return false;
-            }
-            // ID3 标签或 MP3 同步字节 0xFF 0xFB/0xFA/0xF3/0xF2
-            &header[..3] == b"ID3" || (header[0] == 0xFF && (header[1] & 0xE0) == 0xE0)
-        } else {
-            // 检查文件头部是否是有效的 MP4 (ftyp box)
-            let mut header = [0u8; 12];
-            if reader.read_exact(&mut header).is_err() {
-                return false;
-            }
-            // ftyp 标识应该在字节 4-7
-            &header[4..8] == b"ftyp"
-        }
-    }
-
-    // 判断成功：进程成功退出，并且找到了有效的文件
-    let min_success_size: u64 = if is_audio_only { 100 * 1024 } else { 1024 * 1024 }; // 100KB for mp3, 1MB for mp4
-    let actually_success = status.success() && downloaded_file.is_some() && {
-        downloaded_file.as_ref()
-            .map(|p| {
-                // 文件大于最小要求且头部有效
-                p.metadata().ok().map(|m| m.len() > min_success_size).unwrap_or(false)
-                    && is_valid_media_file(p, is_audio_only)
-            })
-            .unwrap_or(false)
-    };
-
-    if actually_success {
-        // 下载成功后，重命名并移动文件
-        if let Some(path) = downloaded_file {
-            let target_name = if is_multi_p {
-                // 多P视频：有标题用标题，没有就用 Pxx
-                let idx = entry_index.unwrap_or(1);
-                if let Some(ref t) = safe_entry_title {
-                    format!("{}.{}", t, target_ext)
-                } else {
-                    format!("P{:02}.{}", idx, target_ext)
-                }
-            } else {
-                // 单视频：用视频标题
-                if let Some(ref t) = safe_title {
-                    format!("{}.{}", t, target_ext)
-                } else {
-                    String::new() // 不重命名
-                }
-            };
-            
-            if !target_name.is_empty() {
-                // 多P视频：移动到最终目录
-                let target_dir = if is_multi_p {
-                    if let Some(ref final_d) = final_dir {
-                        final_d.as_str()
-                    } else {
-                        &actual_output_dir
-                    }
-                } else {
-                    &actual_output_dir
-                };
-                
-                let new_path = std::path::Path::new(target_dir).join(&target_name);
-                if !new_path.exists() {
-                    // 先尝试 rename（同磁盘快速移动）
-                    if fs::rename(&path, &new_path).is_err() {
-                        // rename 失败（可能跨磁盘），改用 copy + delete
-                        if let Ok(_) = fs::copy(&path, &new_path) {
-                            let _ = fs::remove_file(&path);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 清理独立的临时目录（如果是多P下载）
-        if is_multi_p {
-            if let Some(ref temp) = temp_dir {
-                // 尝试删除临时目录（只有空目录才能删除成功）
-                let _ = fs::remove_dir(temp);
-            }
-        }
-        
-        Ok(ApiResponse {
-            success: true,
-            data: Some("下载完成".to_string()),
-            error: None,
-        })
+    let title = if is_multi_p {
+        entry_title.unwrap_or_else(|| format!("P{:02}", entry_index.unwrap_or(1)))
     } else {
-        // 进程被终止或失败，不重命名文件，保持原样以便断点续传
-        Ok(ApiResponse {
+        video_title.unwrap_or_else(|| "video".to_string())
+    };
+    let target_dir = if is_multi_p { final_dir.as_deref().unwrap_or(&output_dir) } else { &output_dir };
+    let result = if let Some(error) = result_path_error { Err(error) } else {
+        download_files::finalize_download(status.success(), &reported_files, &working_dir,
+            std::path::Path::new(target_dir), &title, is_audio_only)
+    };
+    match result {
+        Ok(path) => Ok(ApiResponse {
+            success: true,
+            data: Some(path.to_string_lossy().to_string()),
+            error: None,
+        }),
+        Err(error) => Ok(ApiResponse {
             success: false,
             data: None,
-            error: Some(if error_output.is_empty() {
-                "下载失败".to_string()
-            } else {
-                error_output
-            }),
-        })
+            error: Some(if status.success() || error_output.is_empty() { error }
+                else { format!("{error}\n{error_output}") }),
+        }),
     }
 }
 
 // ==================== 暂停下载 ====================
 
 #[tauri::command]
-fn cancel_download(app_handle: tauri::AppHandle) -> Result<ApiResponse<()>, String> {
+fn cancel_download(app_handle: tauri::AppHandle, task_id: Option<String>) -> Result<ApiResponse<()>, String> {
     let state = app_handle.state::<AppState>();
-    let pid = state.current_download_pid.lock().unwrap().take();
-    
-    if let Some(pid) = pid {
+    let pids: Vec<u32> = {
+        let mut running = state.download_pids.lock().unwrap();
+        if let Some(id) = task_id {
+            running.remove(&id).into_iter().collect()
+        } else {
+            running.drain().map(|(_, pid)| pid).collect()
+        }
+    };
+
+    if !pids.is_empty() {
         // Windows: 使用 taskkill 结束进程树
         #[cfg(target_os = "windows")]
         {
-            let _ = Command::new("taskkill")
+            for pid in pids {
+                let _ = Command::new("taskkill")
                 .args(&["/F", "/T", "/PID", &pid.to_string()])
                 .creation_flags(0x08000000)
                 .output();
+            }
         }
         
         Ok(ApiResponse {
@@ -2650,7 +2376,7 @@ pub fn run() {
         .manage(AppState {
             cookies: Mutex::new(None),
             cookies_file: Mutex::new(None),
-            current_download_pid: Mutex::new(None),
+            download_pids: Mutex::new(HashMap::new()),
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
