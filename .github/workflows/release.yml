@@ -15,6 +15,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get version
+        id: version
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Release tag does not match application version" }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -60,13 +67,6 @@ jobs:
 
       - name: Verify download regressions
         run: cargo test --release --lib --manifest-path src-tauri/Cargo.toml
-
-      - name: Get version
-        id: version
-        run: |
-          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Release tag does not match application version" }
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Create portable zip
         run: |
