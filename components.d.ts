@@ -12,7 +12,10 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AppHeader: typeof import('./src/components/layout/AppHeader.vue')['default']
+    BilibiliCover: typeof import('./src/components/bilibili/BilibiliCover.vue')['default']
+    DiscoveryPanel: typeof import('./src/components/bilibili/DiscoveryPanel.vue')['default']
     DownloadCenter: typeof import('./src/components/common/DownloadCenter.vue')['default']
+    ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAvatar: typeof import('element-plus/es')['ElAvatar']
     ElBadge: typeof import('element-plus/es')['ElBadge']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -23,6 +26,7 @@ declare module 'vue' {
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
     ElDropdownItem: typeof import('element-plus/es')['ElDropdownItem']
     ElDropdownMenu: typeof import('element-plus/es')['ElDropdownMenu']
+    ElEmpty: typeof import('element-plus/es')['ElEmpty']
     ElIcon: typeof import('element-plus/es')['ElIcon']
     ElImage: typeof import('element-plus/es')['ElImage']
     ElInput: typeof import('element-plus/es')['ElInput']
@@ -33,6 +37,7 @@ declare module 'vue' {
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
     ElSelect: typeof import('element-plus/es')['ElSelect']
     ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
+    ElSwitch: typeof import('element-plus/es')['ElSwitch']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     FavoritesPanel: typeof import('./src/components/bilibili/FavoritesPanel.vue')['default']
@@ -45,5 +50,6 @@ declare module 'vue' {
     UpdateDialog: typeof import('./src/components/common/UpdateDialog.vue')['default']
     VideoCard: typeof import('./src/components/common/VideoCard.vue')['default']
     VideoDetailPanel: typeof import('./src/components/bilibili/VideoDetailPanel.vue')['default']
+    VideoPlayerDialog: typeof import('./src/components/bilibili/VideoPlayerDialog.vue')['default']
   }
 }

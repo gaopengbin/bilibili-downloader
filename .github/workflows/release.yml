@@ -33,23 +33,27 @@ jobs:
         run: npm ci
 
       - name: Download yt-dlp
-        run: Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "src-tauri/yt-dlp.exe"
+        run: Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "src-tauri/yt-dlp.exe"
 
       - name: Download ffmpeg
         run: |
-          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
+          Invoke-WebRequest -UseBasicParsing -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg-temp"
           $ffmpegDir = Get-ChildItem -Path "ffmpeg-temp" -Directory | Select-Object -First 1
           Copy-Item "$($ffmpegDir.FullName)/bin/ffmpeg.exe" "src-tauri/ffmpeg.exe"
-          Remove-Item -Recurse -Force "ffmpeg-temp", "ffmpeg.zip"
+          if ((Resolve-Path -LiteralPath "ffmpeg-temp").Path -ne (Join-Path $env:GITHUB_WORKSPACE "ffmpeg-temp")) { throw "Unexpected ffmpeg temporary directory" }
+          Remove-Item -LiteralPath "ffmpeg-temp" -Recurse -Force
+          Remove-Item -LiteralPath "ffmpeg.zip" -Force
 
       - name: Download aria2c
         run: |
-          Invoke-WebRequest -Uri "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip" -OutFile "aria2.zip"
+          Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip" -OutFile "aria2.zip"
           Expand-Archive -Path "aria2.zip" -DestinationPath "aria2-temp"
           $aria2Dir = Get-ChildItem -Path "aria2-temp" -Directory | Select-Object -First 1
           Copy-Item "$($aria2Dir.FullName)/aria2c.exe" "src-tauri/aria2c.exe"
-          Remove-Item -Recurse -Force "aria2-temp", "aria2.zip"
+          if ((Resolve-Path -LiteralPath "aria2-temp").Path -ne (Join-Path $env:GITHUB_WORKSPACE "aria2-temp")) { throw "Unexpected aria2 temporary directory" }
+          Remove-Item -LiteralPath "aria2-temp" -Recurse -Force
+          Remove-Item -LiteralPath "aria2.zip" -Force
 
       - name: Build
         run: npm run tauri build
@@ -58,6 +62,7 @@ jobs:
         id: version
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw "Release tag does not match application version" }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Create portable zip

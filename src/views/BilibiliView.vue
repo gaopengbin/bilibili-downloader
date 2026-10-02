@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { defineAsyncComponent, ref, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -7,12 +7,12 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { readText } from '@tauri-apps/plugin-clipboard-manager';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { 
-  Search, VideoPlay, Clock, Star, Link
+  Search, VideoPlay, Clock, Star, Link, TrendCharts, Trophy
 } from '@element-plus/icons-vue';
 
 // 引入组件
 import { DownloadCenter, LoginDialog } from '@/components';
-import { HistoryPanel, FavoritesPanel, SearchResultPanel, VideoDetailPanel } from '@/components/bilibili';
+import { HistoryPanel, FavoritesPanel, SearchResultPanel, VideoDetailPanel, DiscoveryPanel } from '@/components/bilibili';
 import { useUserStore } from '@/stores';
 import { useDownloadTasks } from '@/composables';
 
@@ -91,7 +91,15 @@ const selectedSeasonEntries = ref<Map<string, number[]>>(new Map()); // 每个�
 
 const userInfo = ref<UserInfo | null>(null);
 
-const activeTab = ref('search');
+const activeTab = ref('ranking');
+const VideoPlayerDialog = defineAsyncComponent(() => import('@/components/bilibili/VideoPlayerDialog.vue'));
+const showPlayer = ref(false);
+const playerUrl = ref('');
+const parsedVideoUrl = ref('');
+function playVideo() {
+  playerUrl.value = parsedVideoUrl.value || videoUrl.value;
+  showPlayer.value = true;
+}
 
 // 搜索相关
 const searchLoading = ref(false);
@@ -367,6 +375,13 @@ async function loadMoreSearch() {
   await doSearch(false);
 }
 
+function searchHotKeyword(keyword: string) {
+  searchKeyword.value = keyword;
+  searchType.value = 'video';
+  activeTab.value = 'search';
+  void doSearch(true);
+}
+
 // ==================== 视频解析下载 ====================
 
 async function parseVideo(url?: string) {
@@ -389,6 +404,7 @@ async function parseVideo(url?: string) {
 
     if (result.success && result.data) {
       videoInfo.value = result.data;
+      parsedVideoUrl.value = targetUrl;
       // 如果解析结果没有封面，使用列表中的封面
       if (!videoInfo.value.thumbnail && pendingCover.value) {
         videoInfo.value.thumbnail = pendingCover.value;
@@ -1079,42 +1095,54 @@ defineExpose({
       <div class="left-panel" :style="{ width: leftPanelWidth + '%' }">
         <!-- Tab 导航 -->
         <div class="tab-nav">
-          <div 
+          <el-button text class="tab-item" :class="{ active: activeTab === 'hot' }" @click="activeTab = 'hot'">
+            <el-icon><TrendCharts /></el-icon><span>热搜</span>
+          </el-button>
+          <el-button text class="tab-item" :class="{ active: activeTab === 'ranking' }" @click="activeTab = 'ranking'">
+            <el-icon><Trophy /></el-icon><span>榜单</span>
+          </el-button>
+          <el-button text
             class="tab-item" 
             :class="{ active: activeTab === 'search' }"
             @click="activeTab = 'search'"
           >
             <el-icon><Search /></el-icon>
             <span>搜索</span>
-          </div>
-          <div 
+          </el-button>
+          <el-button text
             class="tab-item" 
             :class="{ active: activeTab === 'link' }"
             @click="activeTab = 'link'"
           >
             <el-icon><Link /></el-icon>
             <span>解析</span>
-          </div>
-          <div 
+          </el-button>
+          <el-button text
             class="tab-item" 
             :class="{ active: activeTab === 'history' }"
             @click="activeTab = 'history'; onTabChange('history')"
           >
             <el-icon><Clock /></el-icon>
             <span>历史</span>
-          </div>
-          <div 
+          </el-button>
+          <el-button text
             class="tab-item" 
             :class="{ active: activeTab === 'favorites' }"
             @click="activeTab = 'favorites'; onTabChange('favorites')"
           >
             <el-icon><Star /></el-icon>
             <span>收藏</span>
-          </div>
+          </el-button>
         </div>
 
         <!-- Tab 内容 -->
         <div class="tab-content">
+          <div v-show="activeTab === 'hot'" class="tab-pane">
+            <DiscoveryPanel mode="hot" :active="activeTab === 'hot'" @search="searchHotKeyword" />
+          </div>
+          <div v-show="activeTab === 'ranking'" class="tab-pane">
+            <DiscoveryPanel mode="ranking" :active="activeTab === 'ranking'" @select="selectFromList" />
+          </div>
           <!-- 搜索 -->
           <div v-show="activeTab === 'search'" class="tab-pane">
             <div class="search-box">
@@ -1261,11 +1289,13 @@ defineExpose({
           @select-output-dir="selectOutputDir"
           @download-season="downloadSeason"
           @start-download="startDownload"
+          @play="playVideo"
         />
       </div>
     </main>
 
     <!-- 登录弹窗 -->
+    <VideoPlayerDialog v-if="showPlayer" v-model="showPlayer" :url="playerUrl" :title="videoInfo?.title || ''" />
     <LoginDialog @login-success="onLoginSuccess" />
 
     <!-- 下载中心抽屉 -->
@@ -1377,6 +1407,7 @@ defineExpose({
 
 .tab-nav {
   display: flex;
+  flex-wrap: wrap;
   background: var(--bg-card);
   border-radius: 10px;
   padding: 4px;
@@ -1388,6 +1419,10 @@ defineExpose({
 
 .tab-item {
   flex: 1;
+  min-width: 64px;
+  white-space: nowrap;
+  height: auto;
+  margin: 0;
   padding: 10px;
   display: flex;
   align-items: center;
@@ -1408,6 +1443,9 @@ defineExpose({
   color: #fff;
   background: #fb7299;
 }
+
+.tab-item.el-button :deep(> span) { display: flex; gap: 6px; align-items: center; }
+.tab-item.active.el-button:hover { background: #fb7299; color: #fff; }
 
 /* Tab 内容 */
 .tab-content {
@@ -1487,5 +1525,13 @@ defineExpose({
 
 .link-tips li {
   margin: 6px 0;
+}
+
+@media (max-width: 760px) {
+  .bilibili-main { flex-direction: column; overflow-y: auto; padding: 12px; }
+  .left-panel, .right-panel { width: 100% !important; min-width: 0; flex-shrink: 0; padding: 0; }
+  .left-panel { height: 65vh; min-height: 360px; }
+  .right-panel { height: auto; min-height: 300px; margin-top: 16px; }
+  .panel-divider { display: none; }
 }
 </style>

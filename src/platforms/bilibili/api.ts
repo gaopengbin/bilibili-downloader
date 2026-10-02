@@ -4,6 +4,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import type { BilibiliHotSearchItem, BilibiliRankingResult } from '@/types/bilibili';
 import type { 
   VideoInfo, 
   UserInfo, 
@@ -15,6 +16,14 @@ import type {
   ApiResponse,
   VideoEntry
 } from '@/types';
+
+export function getHotSearch(): Promise<ApiResponse<BilibiliHotSearchItem[]>> {
+  return invoke('get_hot_search');
+}
+
+export function getRanking(rid: number): Promise<ApiResponse<BilibiliRankingResult>> {
+  return invoke('get_ranking', { rid });
+}
 
 /**
  * 搜索视频

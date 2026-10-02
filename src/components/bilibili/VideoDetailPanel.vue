@@ -19,6 +19,7 @@
         <div v-else class="image-placeholder">
           <el-icon :size="40"><VideoPlay /></el-icon>
         </div>
+        <el-button class="play-overlay" type="primary" :icon="VideoPlay" @click="$emit('play')">播放视频</el-button>
       </div>
       <div class="detail-info">
         <h2 class="detail-title">{{ videoInfo.title }}</h2>
@@ -261,6 +262,7 @@ defineEmits<{
   (e: 'select-output-dir'): void;
   (e: 'download-season'): void;
   (e: 'start-download'): void;
+  (e: 'play'): void;
 }>();
 </script>
 
@@ -303,6 +305,7 @@ defineEmits<{
 }
 
 .detail-cover {
+  position: relative;
   width: 100%;
   aspect-ratio: 16/9;
   border-radius: 8px;
@@ -314,6 +317,16 @@ defineEmits<{
 .detail-cover .el-image {
   width: 100%;
   height: 100%;
+}
+
+.play-overlay.el-button {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 20px 24px;
+  border-radius: 24px;
+  box-shadow: 0 4px 20px #0005;
 }
 
 .image-error,

@@ -2,6 +2,41 @@
 
 import type { VideoInfo } from './index';
 
+export interface BilibiliHotSearchItem {
+  rank: number;
+  keyword: string;
+  title: string;
+  heat: number;
+}
+
+export interface BilibiliRankingItem {
+  rank: number;
+  bvid: string;
+  title: string;
+  cover: string | null;
+  duration: string;
+  author: string;
+  play: number;
+  danmaku: number;
+}
+
+export interface BilibiliRankingResult {
+  items: BilibiliRankingItem[];
+  note: string;
+}
+
+export const bilibiliRankingCategories = [
+  { label: '全站', value: 0 },
+  { label: '动画', value: 1 },
+  { label: '音乐', value: 3 },
+  { label: '游戏', value: 4 },
+  { label: '知识', value: 36 },
+  { label: '科技', value: 188 },
+  { label: '生活', value: 160 },
+  { label: '美食', value: 211 },
+  { label: '影视', value: 181 },
+];
+
 // B站用户信息
 export interface BilibiliUserInfo {
   username: string;

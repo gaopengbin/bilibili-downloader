@@ -3,3 +3,4 @@ export { default as HistoryPanel } from './HistoryPanel.vue';
 export { default as FavoritesPanel } from './FavoritesPanel.vue';
 export { default as SearchResultPanel } from './SearchResultPanel.vue';
 export { default as VideoDetailPanel } from './VideoDetailPanel.vue';
+export { default as DiscoveryPanel } from './DiscoveryPanel.vue';

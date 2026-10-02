@@ -1,6 +1,8 @@
 // 模块声明（渐进式重构用）
 pub mod models;
 pub mod utils;
+mod discovery;
+mod playback;
 // pub mod commands; // 待完全迁移后启用
 
 use base64::Engine;
@@ -2644,6 +2646,7 @@ async fn download_and_install_update(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(playback::PlaybackState::default())
         .manage(AppState {
             cookies: Mutex::new(None),
             cookies_file: Mutex::new(None),
@@ -2709,6 +2712,11 @@ pub fn run() {
             get_favorite_folders,
             get_favorite_content,
             search_video,
+            discovery::get_hot_search,
+            discovery::get_ranking,
+            playback::start_playback,
+            playback::release_playback,
+            playback::get_video_danmaku,
             rename_folder,
             cancel_download,
             save_download_tasks,
